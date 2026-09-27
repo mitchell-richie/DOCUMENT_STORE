@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets
+.env
+config/config.toml
+
+# Case data (never commit)
+case.sqlite
+case.sqlite-*
+originals/
+cache/
+logs/
+
+# Editors
+.vscode/*
+!.vscode/settings.json
