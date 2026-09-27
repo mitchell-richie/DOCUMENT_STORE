@@ -1,7 +1,7 @@
 # Case Document Management System: Initial Backlog
 
-**Status:** Draft v0.1
-**Source:** Architecture Document v0.3
+**Status:** Draft v0.2
+**Source:** Architecture Document v0.4
 **Scope:** Initial backlog covering the foundation through to question answering.
 
 ---
@@ -36,10 +36,12 @@ Each story carries acceptance criteria. A story is complete only when all criter
 | EPIC-10 | Evaluation and quality | Benchmarks, evaluation harness, regression checks | Cross-cutting |
 | EPIC-11 | Operations | Backup, restore, integrity checks, logging | Cross-cutting |
 | EPIC-12 | Web application shell | Local UI framework and navigation | 2 onward |
+| EPIC-GW | LLM Gateway | Close functionality gaps and integrate into this tool | 0 |
 
 ```mermaid
 flowchart LR
     E1[EPIC-1<br/>Foundation] --> E2[EPIC-2<br/>Ingestion and routing]
+    GW[EPIC-GW<br/>LLM Gateway] --> E1
     E1 --> E3[EPIC-3<br/>Extraction and OCR]
     E2 --> E4[EPIC-4<br/>Chunking, search, embeddings]
     E3 --> E4
@@ -63,22 +65,28 @@ flowchart LR
 
 | ID | Story | Priority | Estimate | Depends on |
 |----|-------|----------|----------|-----------|
-| STORY-1.1 | Repository scaffold and environment | P0 | S | — |
+| STORY-1.1 | Repository scaffold and environment | P0 | M | — |
 | STORY-1.2 | Configuration file and paths | P0 | S | STORY-1.1 |
 | STORY-1.3 | Database schema v1 as migrations | P0 | M | STORY-1.1 |
 | STORY-1.4 | sqlite-vec and FTS5 loading | P0 | S | STORY-1.3 |
 | STORY-1.5 | Ollama connectivity check | P1 | S | STORY-1.2 |
 | STORY-1.6 | PaddleOCR connectivity check | P1 | S | STORY-1.2 |
 | STORY-1.7 | Test harness and fixtures | P1 | S | STORY-1.1 |
+| STORY-1.8 | Gateway client module for case-dms | P0 | M | EPIC-GW |
+| STORY-1.9 | Shared Docker network and devcontainer config | P0 | S | EPIC-GW |
 
 **STORY-1.1: Repository scaffold and environment**
 
+- Devcontainer definition (Dockerfile, devcontainer.json)
+- Ollama host networking verified from container
+- Project stored on WSL filesystem. Documented
 - Python 3.11+ project with dependency management, linting, and a test runner
 - Environment reproducible from a lock file
 - README describes setup steps
 
 *Acceptance criteria:*
 - [ ] A fresh clone installs with a single documented command
+- [ ] Isolated test environment builds on multiple systems with no issues
 - [ ] Tests run (zero tests acceptable at this point) and pass
 - [ ] Linting runs without errors
 
@@ -141,6 +149,16 @@ flowchart LR
 *Acceptance criteria:*
 - [ ] Fixtures exist and are documented
 - [ ] Test suite runs against fixtures
+
+### EPIC-GW: LLM Gateway
+
+**GW-1: Add POST /embed with allowlist and batch limits**
+
+**GW-2: Configurable timeout**
+
+**GW-3: GPU request serialisation**
+
+**GW-4: Verify logs contain no prompt text**
 
 ---
 

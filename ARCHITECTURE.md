@@ -1,9 +1,9 @@
 # Case Document Management System: Architecture
 
-**Status:** Draft v0.3
+**Status:** Draft v0.4
 **Scope:** Single-user, local-first system for managing, searching, and analysing documents and communications relating to an ongoing court case.
 
-**Changes from v0.2:** Added corpus sizing, hardware constraints, and model selection; introduced PaddleOCR as the primary OCR engine; added document routing for in camera material and bank statements; added tiered extraction to manage CPU-bound processing.
+**Changes from v0.3:** Added corpus sizing, hardware constraints, and model selection; introduced PaddleOCR as the primary OCR engine; added document routing for in camera material and bank statements; added tiered extraction to manage CPU-bound processing.
 
 ---
 
@@ -133,16 +133,24 @@ The principal queries are shallow: documents mentioning a person, emails sent by
 ```mermaid
 flowchart LR
     User([User])
-    subgraph Local Machine
+
+    subgraph Devcontainer[case-dms devcontainer]
         App[Case DMS Web Application]
         Router[Document Router]
         Pipeline[Ingestion and Processing Pipeline]
+        GWClient[Gateway Client Module]
+        Paddle[PaddleOCR]
         DB[(SQLite Database<br/>metadata, FTS5, sqlite-vec,<br/>entities, events, edges)]
         Files[(Originals Folder<br/>read-only, hashed)]
-        Ollama[Ollama<br/>embeddings and LLM<br/>models on E:]
-        Paddle[PaddleOCR]
         BankTool[Bank Statement Tool<br/>separate system]
     end
+
+    subgraph Gateway[LLM Gateway stack]
+        GWAPI[LLM Gateway API<br/>auth, validation, retries,<br/>allowlist, logging]
+        Ollama[Ollama<br/>GPU-accelerated]
+        Models[(Model store<br/>E: drive)]
+    end
+
     Takeout[(Google Takeout<br/>MBOX export)]
     Cloud[Gemini API<br/>non-restricted documents only]
 
@@ -154,11 +162,45 @@ flowchart LR
     Pipeline --> Files
     Pipeline --> DB
     Pipeline --> Paddle
-    Pipeline --> Ollama
+    Pipeline --> GWClient
+    GWClient -->|HTTP over llm_net<br/>x-api-key, x-client-name: case-dms| GWAPI
+    GWAPI --> Ollama
+    Ollama --> Models
     Pipeline -.optional, gated.-> Cloud
     Takeout -.manual import.-> Router
 ```
 
+### 5.1 External Interfaces
+
+| Interface | Direction | Protocol | Purpose | Controls |
+|-----------|-----------|----------|---------|----------|
+| LLM Gateway `POST /embed` | case-dms → gateway | HTTP (JSON) | Chunk and query embeddings | API key, model allowlist, batch size limit |
+| LLM Gateway `POST /generate` | case-dms → gateway | HTTP (JSON) | Answer generation for RAG | API key, model allowlist, prompt length limit |
+| LLM Gateway `POST /generate-structured` | case-dms → gateway | HTTP (JSON) | Entity and event extraction (Tier 1) | API key, model allowlist, schema validation, retry cap |
+| LLM Gateway `GET /health` | case-dms → gateway | HTTP | Connectivity check | None |
+| Gemini API | case-dms → Google | HTTPS | Optional extraction and generation for `standard` route only | Per-route gating, cloud calls logged |
+| Google Takeout | Manual import | MBOX file | Email source | Operator-initiated |
+
+### 5.2 Network Topology
+
+The gateway is not published to the host network. Containers in the case-dms devcontainer and the gateway stack communicate over a shared external Docker network, `llm_net`. Only containers attached to this network can reach the gateway API.
+
+| Component | Network | Host port published |
+|-----------|---------|---------------------|
+| LLM Gateway API | `llm_net` (and gateway default network) | No |
+| Ollama | Gateway default network only | No |
+| case-dms devcontainer | `llm_net` | Web application only, bound to `127.0.0.1` |
+
+### 5.3 Failure Handling
+
+The gateway returns structured error statuses (`400`, `401`, `422`, `502`, `503`, `504`). The pipeline treats these as follows:
+
+| Status | Pipeline Behaviour |
+|--------|---------------------|
+| `400` | Logged as a configuration error (bad model name, oversized prompt, invalid schema); not retried |
+| `401` | Treated as fatal; processing halts until the key is corrected |
+| `422` | Recorded as an extraction failure for the chunk; chunk flagged for manual review |
+| `502` / `503` / `504` | Retried with backoff; if retries are exhausted, the batch job pauses and reports the failure (Section 8.6, Tier 1 scheduler) |
 ---
 
 ## 6. Component Architecture
@@ -614,26 +656,43 @@ Graph views derive from the `relationship` table and are filtered to confirmed i
 ```mermaid
 flowchart TB
     subgraph Machine[User Machine]
-        subgraph Project[case-dms directory on internal drive]
-            Config[config.toml]
-            DBFile[(case.sqlite)]
-            Store[originals/<br/>read-only copies]
-            Cache[cache/<br/>OCR output, page images]
-            Logs[logs/]
+        subgraph WSL[WSL2 Linux filesystem]
+            subgraph Project[case-dms directory]
+                Config[config.toml]
+                DBFile[(case.sqlite)]
+                Store[originals/<br/>read-only copies]
+                Cache[cache/<br/>OCR output, page images]
+                Logs[logs/]
+                Env[.env<br/>excluded from version control]
+            end
+            Devc[case-dms devcontainer<br/>Python, PaddleOCR,<br/>web application]
         end
+
+        subgraph GWStack[LLM Gateway stack<br/>Docker Desktop]
+            GWAPI[llm-gateway-api]
+            OllamaSvc[ollama]
+        end
+
         subgraph External[External drive E:]
             Models[Ollama model store]
         end
-        OllamaSvc[Ollama service<br/>localhost:11434]
-        PaddleSvc[PaddleOCR<br/>local]
-        WebApp[Web application<br/>localhost:8000]
+
+        LLMNet{{llm_net<br/>external Docker network}}
+        WebApp[Web application<br/>127.0.0.1:8000]
     end
-    WebApp --> DBFile
-    WebApp --> OllamaSvc
-    WebApp --> PaddleSvc
-    WebApp --> Store
+
+    Devc --- LLMNet
+    GWAPI --- LLMNet
+    Devc --> DBFile
+    Devc --> Store
+    Devc --> Cache
+    Devc --> WebApp
+    Devc -->|http://llm-gateway-api:8000| GWAPI
+    GWAPI --> OllamaSvc
     OllamaSvc --> Models
 ```
+
+### 10.1 File Layout
 
 | Path | Contents | Backup |
 |------|----------|--------|
@@ -641,10 +700,46 @@ flowchart TB
 | `originals/` | Copies of source files | Once, plus on change |
 | `cache/` | Regenerable OCR output and page images | Not required |
 | `logs/` | Pipeline and audit logs | Optional |
-| `config.toml` | Model names, chunk sizes, routing rules, paths | Yes |
-| E: `models/` | Ollama model files | Not required (re-downloadable) |
+| `config.toml` | Model names, chunk sizes, routing rules, gateway URL, paths | Yes |
+| `.env` | `LLM_GATEWAY_KEY` and other secrets | Yes, stored separately from project backup |
+| E: `models/` | Ollama model files (managed by the gateway stack) | Not required (re-downloadable) |
 
-**Storage note:** The SQLite database and vector index reside on the internal drive. Placing the database on an external drive is avoided because of latency and disconnection risk.
+### 10.2 Configuration and Secrets
+
+| Setting | Location | Example | Notes |
+|---------|----------|---------|-------|
+| `LLM_GATEWAY_URL` | Container environment | `http://llm-gateway-api:8000` | Internal to `llm_net` |
+| `LLM_GATEWAY_KEY` | `.env` or host environment | (secret) | Never committed; never written to `config.toml` |
+| `LLM_CLIENT_NAME` | Container environment | `case-dms` | Used in gateway logs via `x-client-name` |
+| Embedding model | `config.toml` | `bge-m3` | Must appear in gateway `ALLOWED_EMBED_MODELS` |
+| Extraction model | `config.toml` | `qwen2.5:7b-instruct` | Must appear in gateway `ALLOWED_MODELS` |
+| Generation model | `config.toml` | `qwen2.5:7b-instruct` | Must appear in gateway `ALLOWED_MODELS` |
+
+### 10.3 Storage Notes
+
+- The SQLite database and vector index reside on the WSL Linux filesystem. Placing them on `/mnt/c` or `/mnt/e` is avoided because of file-locking reliability and latency.
+- Ollama model weights remain on E: and are mounted by the gateway stack using long-form bind syntax (see gateway documentation).
+- The originals folder is accessible from Windows via `\\wsl$`.
+
+### 10.4 Startup Order
+
+```mermaid
+sequenceDiagram
+    participant Op as Operator
+    participant GW as LLM Gateway stack
+    participant Net as llm_net
+    participant Dev as case-dms devcontainer
+    Op->>Net: docker network create llm_net (once)
+    Op->>GW: docker compose up -d --build
+    Op->>Dev: Reopen project in container
+    Dev->>GW: GET /health
+    GW-->>Dev: {"status": "ok"}
+    Dev->>GW: POST /embed (smoke test)
+    GW-->>Dev: Embeddings returned
+```
+
+The startup check in the devcontainer confirms that both health and embedding endpoints are reachable before any processing begins.
+
 
 ---
 
