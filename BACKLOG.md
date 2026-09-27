@@ -85,10 +85,10 @@ flowchart LR
 - README describes setup steps
 
 *Acceptance criteria:*
-- [ ] A fresh clone installs with a single documented command
-- [ ] Isolated test environment builds on multiple systems with no issues
-- [ ] Tests run (zero tests acceptable at this point) and pass
-- [ ] Linting runs without errors
+- [x] A fresh clone installs with a single documented command
+- [x] Isolated test environment builds on multiple systems with no issues
+- [x] Tests run (zero tests acceptable at this point) and pass
+- [x] Linting runs without errors
 
 **STORY-1.2: Configuration file and paths**
 
@@ -97,9 +97,9 @@ flowchart LR
 - The Ollama model directory is read from `OLLAMA_MODELS` and is not hard-coded
 
 *Acceptance criteria:*
-- [ ] Missing or malformed config produces a clear error message
-- [ ] Changing a setting does not require code changes
-- [ ] Paths on the external drive (E:) are accepted for models but not for the database
+- [x] Missing or malformed config produces a clear error message
+- [x] Changing a setting does not require code changes
+- [x] Paths on the external drive (E:) are accepted for models but not for the database
 
 **STORY-1.3: Database schema v1 as migrations**
 
@@ -129,8 +129,8 @@ flowchart LR
 - Reports a clear error if the configured embedding or LLM model is missing
 
 *Acceptance criteria:*
-- [ ] Command returns model list and status
-- [ ] Missing model produces an actionable message (`ollama pull <name>`)
+- [x] Command returns model list and status
+- [x] Missing model produces an actionable message (`ollama pull <name>`)
 
 **STORY-1.6: PaddleOCR connectivity check**
 
