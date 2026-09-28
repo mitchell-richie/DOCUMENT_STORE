@@ -108,9 +108,9 @@ flowchart LR
 - Indexes on `document.doc_class`, `document.doc_date`, `chunk.document_id`, `email_message.sent_at`, `entity_mention.entity_id`, `event.event_date`
 
 *Acceptance criteria:*
-- [ ] Migrations apply to an empty database
-- [ ] Migrations are idempotent when re-run
-- [ ] A schema diagram or dump is generated and committed
+- [x] Migrations apply to an empty database
+- [x] Migrations are idempotent when re-run
+- [x] A schema diagram or dump is generated and committed
 
 **STORY-1.4: sqlite-vec and FTS5 loading**
 
