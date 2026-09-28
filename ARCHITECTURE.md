@@ -1,10 +1,10 @@
 # Case Document Management System: Architecture
 
-**Status:** Draft v0.4
+**Status:** Draft v0.5
 **Scope:** Single-user, local-first system for managing, searching, and analysing documents and communications relating to an ongoing court case.
 
 **Changes from v0.3:** Added corpus sizing, hardware constraints, and model selection; introduced PaddleOCR as the primary OCR engine; added document routing for in camera material and bank statements; added tiered extraction to manage CPU-bound processing.
-
+**Changes from v0.4** Join tables added for message participants and event entities. Constraints, enumerations, and indexes are now defined. Review kinds and thread confidence are specified. Migration `0001_initial.sql` is the authoritative schema; this section describes it.
 ---
 
 ## 1. Purpose and Scope
@@ -274,49 +274,86 @@ flowchart TB
 
 ```mermaid
 erDiagram
+    SOURCE_FILE ||--o{ SOURCE_FILE_LOCATION : "found at"
     SOURCE_FILE ||--o{ DOCUMENT : "is"
+    DOCUMENT ||--o{ DOCUMENT : "parent of (attachments)"
     DOCUMENT ||--o{ CHUNK : "split into"
-    CHUNK ||--o| CHUNK_EMBEDDING : "has"
+    DOCUMENT ||--o| EXTERNAL_RECORD : "may link to"
     DOCUMENT ||--o| EMAIL_MESSAGE : "may be"
-    EMAIL_MESSAGE }o--o| EMAIL_THREAD : "belongs to"
-    EMAIL_MESSAGE }o--o{ ENTITY : "from, to, cc"
-    CHUNK }o--o{ ENTITY : "mentions"
-    CHUNK }o--o{ EVENT : "supports"
-    EVENT }o--o{ ENTITY : "involves"
+    EMAIL_THREAD ||--o{ EMAIL_MESSAGE : "contains"
+    EMAIL_MESSAGE ||--o{ MESSAGE_PARTICIPANT : "from, to, cc"
+    ENTITY ||--o{ MESSAGE_PARTICIPANT : "participates"
+    CHUNK ||--o| CHUNK_EMBEDDING : "has"
+    CHUNK ||--o{ ENTITY_MENTION : "mentions"
+    ENTITY ||--o{ ENTITY_MENTION : "is mentioned in"
     ENTITY ||--o{ ENTITY_ALIAS : "known as"
-    ENTITY ||--o{ RELATIONSHIP : "source of"
-    ENTITY ||--o{ RELATIONSHIP : "target of"
-    REVIEW_ITEM }o--|| EVENT : "may concern"
+    CHUNK ||--o{ EVENT_EVIDENCE : "supports"
+    EVENT ||--o{ EVENT_EVIDENCE : "evidenced by"
+    EVENT ||--o{ EVENT_ENTITY : "involves"
+    ENTITY ||--o{ EVENT_ENTITY : "involved in"
+    ENTITY ||--o{ RELATIONSHIP : "source or target"
+    EVENT ||--o{ RELATIONSHIP : "source or target"
+    CHUNK o|--o{ RELATIONSHIP : "evidences"
 ```
 
-### 7.2 Key Tables
+`CHUNK_EMBEDDING` and `chunk_fts` are virtual tables created in STORY-1.4 and are not part of migration `0001_initial.sql`.
 
-| Table | Purpose | Principal Fields |
-|-------|---------|------------------|
-| `source_file` | One row per physical file | id, path, sha256, size, mime_type, imported_at |
-| `document` | Logical document | id, source_file_id, title, doc_class, processing_route, doc_date, parent_id |
-| `chunk` | Citable text unit | id, document_id, ordinal, page_start, page_end, text, char_start, char_end, chunk_method, ocr_confidence |
-| `chunk_embedding` | Vector (sqlite-vec virtual table) | chunk_id, embedding, model_id |
-| `chunk_fts` | FTS5 index over chunk text | chunk_id, text |
-| `email_thread` | Conversation | id, subject_normalised, first_sent_at, last_sent_at |
-| `email_message` | Individual message | id, document_id, thread_id, message_id_header, in_reply_to, sent_at, subject |
-| `entity` | Person, organisation, place, or issue | id, entity_type, canonical_name, notes |
-| `entity_alias` | Name variants | entity_id, alias, source_chunk_id |
-| `entity_mention` | Occurrence of an entity in a chunk | entity_id, chunk_id, quote, confidence, status |
-| `event` | Something that occurred | id, title, description, event_date, date_precision, confidence, status |
-| `event_evidence` | Links events to supporting chunks | event_id, chunk_id, quote |
-| `relationship` | Typed edge between entities or events | source_id, source_type, target_id, target_type, relationship_type, confidence, status, evidence_chunk_id |
-| `external_record` | Pointer to records held by another tool | id, document_id, external_system, external_id, summary_date_range |
-| `review_item` | Pending machine suggestions | id, kind, payload, created_at, decided_at, decision |
-| `processing_run` | Audit record of pipeline runs | id, stage, model_id, parameters, started_at, finished_at |
+### 7.2 Tables
 
-**Design notes:**
+| Table | Purpose | Principal Fields | Constraints |
+|-------|---------|------------------|-------------|
+| `source_file` | One row per unique file content | id, sha256, size_bytes, mime_type, imported_at | `sha256` unique |
+| `source_file_location` | Each path at which a file was found | id, source_file_id, path, first_seen_at | `path` unique; cascades from `source_file` |
+| `document` | Logical document (a PDF, a Word file, an email message, or an attachment) | id, source_file_id, parent_id, title, doc_class, processing_route, doc_date, low_confidence, created_at | `doc_class` and `processing_route` restricted to defined values; `parent_id` supports attachments |
+| `external_record` | Pointer to a record held by another tool (e.g. bank statement categorisation) | id, document_id, external_system, external_id, summary_date_range | `(external_system, external_id)` unique |
+| `chunk` | Citable text unit | id, document_id, ordinal, page_start, page_end, text, char_start, char_end, chunk_method, ocr_confidence | `(document_id, ordinal)` unique; `char_end >= char_start`; `ocr_confidence` between 0 and 1 |
+| `email_thread` | Conversation | id, subject_normalised, first_sent_at, last_sent_at | — |
+| `email_message` | Individual message | id, document_id, thread_id, message_id_header, in_reply_to, sent_at, subject, thread_confidence | `document_id` unique; `message_id_header` unique; `thread_confidence` is `high` or `low` |
+| `message_participant` | Sender and recipients of a message | message_id, entity_id, role | Primary key `(message_id, entity_id, role)`; role is `from`, `to`, or `cc` |
+| `entity` | Person, organisation, place, or issue | id, entity_type, canonical_name, notes, created_at | `entity_type` restricted to defined values |
+| `entity_alias` | Name variants | id, entity_id, alias, source_chunk_id | `(entity_id, alias)` unique |
+| `entity_mention` | Occurrence of an entity in a chunk | id, entity_id, chunk_id, quote, confidence, status, created_at | `status` restricted; `confidence` between 0 and 1 |
+| `event` | Something that occurred | id, title, description, event_date, date_precision, confidence, status, created_at | `date_precision` and `status` restricted |
+| `event_evidence` | Links events to supporting chunks | event_id, chunk_id, quote | Primary key `(event_id, chunk_id)` |
+| `event_entity` | Links events to involved entities | event_id, entity_id | Primary key `(event_id, entity_id)` |
+| `relationship` | Typed edge between entities or events | id, source_type, source_id, target_type, target_id, relationship_type, confidence, status, evidence_chunk_id, created_at | `source_type` and `target_type` are `entity` or `event`; `status` restricted |
+| `review_item` | Pending or decided machine suggestions | id, kind, payload, created_at, decided_at, decision | `kind` restricted; `decision` restricted |
+| `processing_run` | Audit record of pipeline runs | id, stage, model_id, parameters, started_at, finished_at | — |
+| `schema_migrations` | Applied migration versions | version, name, applied_at | Managed by the migration runner |
 
-- `doc_class` takes values such as `correspondence`, `court_filing`, `in_camera`, `financial_statement`, `receipt`, `other`.
-- `processing_route` takes values `standard` (local and cloud-eligible), `local_only` (no cloud calls), `index_only` (registered and searchable by metadata, not chunked), and `external` (handled by another tool).
-- `date_precision` distinguishes exact dates from approximate descriptions.
-- `status` on `entity_mention`, `relationship`, and `event` takes the values `proposed`, `confirmed`, `edited`, or `rejected`. Only `confirmed` items appear as facts in timeline views by default.
-- `ocr_confidence` supports filtering and review of low-quality scans.
+**Virtual tables (STORY-1.4):**
+
+| Table | Purpose |
+|-------|---------|
+| `chunk_embedding` | Vector index (sqlite-vec) with `chunk_id` and `model_id` |
+| `chunk_fts` | Full-text index (FTS5) over chunk text |
+
+### 7.3 Enumerations
+
+| Field | Allowed Values |
+|-------|----------------|
+| `document.doc_class` | `correspondence`, `court_filing`, `in_camera`, `financial_statement`, `receipt`, `other` |
+| `document.processing_route` | `standard`, `local_only`, `index_only`, `external` |
+| `entity.entity_type` | `person`, `organisation`, `place`, `issue` |
+| `message_participant.role` | `from`, `to`, `cc` |
+| `event.date_precision` | `exact`, `month`, `year`, `approximate`, `unknown` |
+| `entity_mention.status`, `event.status`, `relationship.status` | `proposed`, `confirmed`, `edited`, `rejected` |
+| `relationship.source_type`, `relationship.target_type` | `entity`, `event` |
+| `email_message.thread_confidence` | `high`, `low` |
+| `review_item.kind` | `entity_mention`, `event`, `alias`, `relationship`, `classification`, `ocr` |
+| `review_item.decision` | `confirmed`, `edited`, `rejected` (or null while pending) |
+
+### 7.4 Design Notes
+
+- **Join tables for participants and event entities.** `message_participant` supports the communication chain view (who sent or received each message). `event_entity` supports queries such as "all events involving this person".
+- **Thread confidence.** Threads reconstructed from `In-Reply-To` and `References` headers are `high`. Threads inferred from subject and participants are `low` (STORY-5.6).
+- **Date precision.** `date_precision` distinguishes exact dates from approximate descriptions. Legal timelines frequently require this distinction.
+- **Status model.** Only `confirmed` items appear as facts in timeline views by default. The state transitions are defined in Section 8.14.
+- **Polymorphic relationships.** `relationship.source_id` and `target_id` reference either `entity` or `event` depending on the type fields. SQLite cannot enforce a foreign key across two tables, so integrity for these rows is enforced by the application and checked by tests.
+- **Cascades.** Deleting a `source_file` removes its locations and documents; deleting a document removes its chunks, message record, and external record. Deleting a chunk removes its entity mentions and event evidence.
+- **Processing route and the database.** `processing_route` is stored on each document so that routing decisions remain auditable after the fact.
+- **Audit.** `processing_run` records model identifiers and parameters so that results can be reproduced or regenerated.
+
 
 ---
 
@@ -825,3 +862,13 @@ gantt
 (Dates are placeholders; the diagram defines sequence only.)
 
 **Sequencing rationale:** Routing precedes all processing so that restricted material is handled correctly from the first ingestion. OCR quality is established before chunking and embedding, because downstream search and extraction depend on it. Question answering is developed last because its quality is bounded by the retrieval beneath it.
+
+---
+
+## Change Log
+
+| Version | Section | Change |
+|---------|---------|--------|
+| v0.3 | 7 | Initial data model |
+| v0.4 | 5, 10 | Gateway integration |
+| v0.5 | 7 | Added `message_participant`, `event_entity`, `source_file_location`, `schema_migrations`; defined enumerations and constraints; specified `review_item.kind` values and `email_message.thread_confidence` |
