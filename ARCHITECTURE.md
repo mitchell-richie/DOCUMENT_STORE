@@ -1,10 +1,11 @@
 # Case Document Management System: Architecture
 
-**Status:** Draft v0.5
+**Status:** Draft v0.6
 **Scope:** Single-user, local-first system for managing, searching, and analysing documents and communications relating to an ongoing court case.
 
 **Changes from v0.3:** Added corpus sizing, hardware constraints, and model selection; introduced PaddleOCR as the primary OCR engine; added document routing for in camera material and bank statements; added tiered extraction to manage CPU-bound processing.
 **Changes from v0.4** Join tables added for message participants and event entities. Constraints, enumerations, and indexes are now defined. Review kinds and thread confidence are specified. Migration `0001_initial.sql` is the authoritative schema; this section describes it.
+**Changes from v0.5** Reflect implementation of vector tables for chunks as in `0002_fts.sql`
 ---
 
 ## 1. Purpose and Scope
@@ -307,6 +308,8 @@ erDiagram
 | `document` | Logical document (a PDF, a Word file, an email message, or an attachment) | id, source_file_id, parent_id, title, doc_class, processing_route, doc_date, low_confidence, created_at | `doc_class` and `processing_route` restricted to defined values; `parent_id` supports attachments |
 | `external_record` | Pointer to a record held by another tool (e.g. bank statement categorisation) | id, document_id, external_system, external_id, summary_date_range | `(external_system, external_id)` unique |
 | `chunk` | Citable text unit | id, document_id, ordinal, page_start, page_end, text, char_start, char_end, chunk_method, ocr_confidence | `(document_id, ordinal)` unique; `char_end >= char_start`; `ocr_confidence` between 0 and 1 |
+| `chunk_embedding_<model>_<dimensions>` | One vec0 table per embedding model and dimension, e.g. chunk_embedding_bge_m3_1024 | chunk_id (primary key), embedding (fixed-length float vector) | A model or dimension change creates a new table rather than mixing incompatible vectors. |
+| `chunk_fts` | Full-text index (FTS5, external-content) over chunk text, tokenized with unicode61 remove_diacritics 2 | | kept in sync with chunk by triggers on insert, update, and delete |
 | `email_thread` | Conversation | id, subject_normalised, first_sent_at, last_sent_at | — |
 | `email_message` | Individual message | id, document_id, thread_id, message_id_header, in_reply_to, sent_at, subject, thread_confidence | `document_id` unique; `message_id_header` unique; `thread_confidence` is `high` or `low` |
 | `message_participant` | Sender and recipients of a message | message_id, entity_id, role | Primary key `(message_id, entity_id, role)`; role is `from`, `to`, or `cc` |
@@ -320,13 +323,6 @@ erDiagram
 | `review_item` | Pending or decided machine suggestions | id, kind, payload, created_at, decided_at, decision | `kind` restricted; `decision` restricted |
 | `processing_run` | Audit record of pipeline runs | id, stage, model_id, parameters, started_at, finished_at | — |
 | `schema_migrations` | Applied migration versions | version, name, applied_at | Managed by the migration runner |
-
-**Virtual tables (STORY-1.4):**
-
-| Table | Purpose |
-|-------|---------|
-| `chunk_embedding` | Vector index (sqlite-vec) with `chunk_id` and `model_id` |
-| `chunk_fts` | Full-text index (FTS5) over chunk text |
 
 ### 7.3 Enumerations
 
@@ -353,7 +349,9 @@ erDiagram
 - **Cascades.** Deleting a `source_file` removes its locations and documents; deleting a document removes its chunks, message record, and external record. Deleting a chunk removes its entity mentions and event evidence.
 - **Processing route and the database.** `processing_route` is stored on each document so that routing decisions remain auditable after the fact.
 - **Audit.** `processing_run` records model identifiers and parameters so that results can be reproduced or regenerated.
-
+- **Vector table naming.** The embedding model identifier is slugified and combined with the vector dimension to form the table name (vector_table_name()). This replaces the single-table-with-model_id-column design from v0.5, because sqlite-vec's vec0 tables are fixed-dimension and do not support a discriminator column cleanly.
+- **No foreign key from vector tables to `chunk`**. Virtual tables cannot carry foreign keys. Deleting a chunk does not automatically remove its vectors; cleanup is an application responsibility, to be implemented alongside re-embedding (EPIC-4).
+- **FTS5 sync.** Triggers on chunk keep chunk_fts current, including on cascade deletes from document or source file removal.
 
 ---
 
@@ -751,6 +749,7 @@ flowchart TB
 | Embedding model | `config.toml` | `bge-m3` | Must appear in gateway `ALLOWED_EMBED_MODELS` |
 | Extraction model | `config.toml` | `qwen2.5:7b-instruct` | Must appear in gateway `ALLOWED_MODELS` |
 | Generation model | `config.toml` | `qwen2.5:7b-instruct` | Must appear in gateway `ALLOWED_MODELS` |
+| embedding_dimensions | `config.toml` | 1024 | |
 
 ### 10.3 Storage Notes
 

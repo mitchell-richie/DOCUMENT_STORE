@@ -119,9 +119,9 @@ flowchart LR
 - FTS5 table `chunk_fts` is created and kept in sync by triggers or application code
 
 *Acceptance criteria:*
-- [ ] A test inserts a vector and retrieves it by nearest-neighbour query
-- [ ] A test inserts text and retrieves it by keyword query
-- [ ] Changing embedding dimension in config produces a new table rather than silently failing
+- [x] A test inserts a vector and retrieves it by nearest-neighbour query
+- [x] A test inserts text and retrieves it by keyword query
+- [x] Changing embedding dimension in config produces a new table rather than silently failing
 
 **STORY-1.5: Ollama connectivity check**
 
