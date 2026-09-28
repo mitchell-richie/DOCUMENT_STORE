@@ -23,6 +23,7 @@ client_name = "case-dms"
 embedding = "bge-m3"
 extraction = "qwen2.5:7b-instruct"
 generation = "qwen2.5:7b-instruct"
+embedding_dimensions = 1024
 
 [chunking]
 max_chars = 2000

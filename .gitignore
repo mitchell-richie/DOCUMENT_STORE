@@ -19,3 +19,6 @@ logs/
 # Editors
 .vscode/*
 !.vscode/settings.json
+
+# Tests
+.coverage

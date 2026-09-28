@@ -18,13 +18,20 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
 
 def test_migrations_apply_to_empty_database(conn: sqlite3.Connection) -> None:
     applied = migrate(conn)
-    assert applied == ["0001_initial.sql"]
+    assert applied == ["0001_initial.sql", "0002_fts.sql"]
 
     tables = {
         row[0]
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
     }
-    for expected in ("source_file", "document", "chunk", "event", "entity_mention"):
+    for expected in (
+        "event", "entity_mention", "email_thread", "chunk_fts_docsize",
+        "chunk_fts_config", "chunk_fts", "review_item", "processing_run",
+        "chunk", "external_record", "schema_migrations", "source_file_location",
+        "event_entity", "document", "chunk_fts_data", "chunk_fts_idx",
+        "relationship", "email_message", "entity", "source_file",
+        "entity_alias", "event_evidence", "message_participant"
+        ):
         assert expected in tables
 
 
