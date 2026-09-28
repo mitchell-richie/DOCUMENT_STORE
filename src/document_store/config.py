@@ -37,6 +37,7 @@ class GatewayConfig:
 @dataclass(frozen=True)
 class Models:
     embedding: str
+    embedding_dimensions: int
     extraction: str
     generation: str
 
@@ -97,6 +98,7 @@ def load_settings(path: Path = DEFAULT_CONFIG_PATH) -> Settings:
         ),
         models=Models(
             embedding=models_raw["embedding"],
+            embedding_dimensions=int(models_raw["embedding_dimensions"]),
             extraction=models_raw["extraction"],
             generation=models_raw["generation"],
         ),

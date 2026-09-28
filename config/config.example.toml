@@ -21,3 +21,9 @@ overlap_chars = 200
 
 [ocr]
 confidence_threshold = 0.6
+
+[models]
+embedding = "bge-m3"
+embedding_dimensions = 1024
+extraction = "qwen2.5:7b-instruct"
+generation = "qwen2.5:7b-instruct"
