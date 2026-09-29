@@ -184,9 +184,9 @@ flowchart LR
 - Creates a `source_file` record; does not copy or modify the original
 
 *Acceptance criteria:*
-- [ ] Re-registering an unchanged file creates no new record
-- [ ] Original file hash is unchanged after registration
-- [ ] Files with unsupported types are logged and skipped
+- [x] Re-registering an unchanged file creates no new record
+- [x] Original file hash is unchanged after registration
+- [x] Files with unsupported types are logged and skipped
 
 **STORY-2.2: Duplicate detection**
 
