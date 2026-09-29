@@ -9,6 +9,13 @@ import pytest
 from document_store.db.connection import connect
 from document_store.db.migrate import migrate
 
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+
+@pytest.fixture
+def fixtures_dir() -> Path:
+    "Directory containing synthetic test fixtures"
+    return FIXTURES_DIR
+
 
 @pytest.fixture
 def conn(tmp_path: Path) -> Iterator[sqlite3.Connection]:

@@ -148,8 +148,8 @@ flowchart LR
 - Fixtures contain no real case material
 
 *Acceptance criteria:*
-- [ ] Fixtures exist and are documented
-- [ ] Test suite runs against fixtures
+- [x] Fixtures exist and are documented
+- [x] Test suite runs against fixtures
 
 ### EPIC-GW: LLM Gateway
 
