@@ -85,10 +85,10 @@ flowchart LR
 - README describes setup steps
 
 *Acceptance criteria:*
-- [ ] A fresh clone installs with a single documented command
-- [ ] Isolated test environment builds on multiple systems with no issues
-- [ ] Tests run (zero tests acceptable at this point) and pass
-- [ ] Linting runs without errors
+- [x] A fresh clone installs with a single documented command
+- [x] Isolated test environment builds on multiple systems with no issues
+- [x] Tests run (zero tests acceptable at this point) and pass
+- [x] Linting runs without errors
 
 **STORY-1.2: Configuration file and paths**
 
@@ -97,9 +97,9 @@ flowchart LR
 - The Ollama model directory is read from `OLLAMA_MODELS` and is not hard-coded
 
 *Acceptance criteria:*
-- [ ] Missing or malformed config produces a clear error message
-- [ ] Changing a setting does not require code changes
-- [ ] Paths on the external drive (E:) are accepted for models but not for the database
+- [x] Missing or malformed config produces a clear error message
+- [x] Changing a setting does not require code changes
+- [x] Paths on the external drive (E:) are accepted for models but not for the database
 
 **STORY-1.3: Database schema v1 as migrations**
 
@@ -108,9 +108,9 @@ flowchart LR
 - Indexes on `document.doc_class`, `document.doc_date`, `chunk.document_id`, `email_message.sent_at`, `entity_mention.entity_id`, `event.event_date`
 
 *Acceptance criteria:*
-- [ ] Migrations apply to an empty database
-- [ ] Migrations are idempotent when re-run
-- [ ] A schema diagram or dump is generated and committed
+- [x] Migrations apply to an empty database
+- [x] Migrations are idempotent when re-run
+- [x] A schema diagram or dump is generated and committed
 
 **STORY-1.4: sqlite-vec and FTS5 loading**
 
@@ -119,9 +119,9 @@ flowchart LR
 - FTS5 table `chunk_fts` is created and kept in sync by triggers or application code
 
 *Acceptance criteria:*
-- [ ] A test inserts a vector and retrieves it by nearest-neighbour query
-- [ ] A test inserts text and retrieves it by keyword query
-- [ ] Changing embedding dimension in config produces a new table rather than silently failing
+- [x] A test inserts a vector and retrieves it by nearest-neighbour query
+- [x] A test inserts text and retrieves it by keyword query
+- [x] Changing embedding dimension in config produces a new table rather than silently failing
 
 **STORY-1.5: Ollama connectivity check**
 
@@ -129,8 +129,8 @@ flowchart LR
 - Reports a clear error if the configured embedding or LLM model is missing
 
 *Acceptance criteria:*
-- [ ] Command returns model list and status
-- [ ] Missing model produces an actionable message (`ollama pull <name>`)
+- [x] Command returns model list and status
+- [x] Missing model produces an actionable message (`ollama pull <name>`)
 
 **STORY-1.6: PaddleOCR connectivity check**
 
@@ -138,8 +138,9 @@ flowchart LR
 - Reports CPU or GPU mode
 
 *Acceptance criteria:*
-- [ ] Sample image OCR completes and returns text
-- [ ] Confidence values are present in the output
+- [x] Sample image OCR completes and returns text
+- [x] Confidence values are present in the output
+- [x] Reports CPU or GPU mode
 
 **STORY-1.7: Test harness and fixtures**
 
@@ -147,8 +148,8 @@ flowchart LR
 - Fixtures contain no real case material
 
 *Acceptance criteria:*
-- [ ] Fixtures exist and are documented
-- [ ] Test suite runs against fixtures
+- [x] Fixtures exist and are documented
+- [x] Test suite runs against fixtures
 
 ### EPIC-GW: LLM Gateway
 

@@ -1,0 +1,29 @@
+[paths]
+project_dir = "."
+database = "case.sqlite"
+originals = "originals"
+cache = "cache"
+logs = "logs"
+
+[gateway]
+url = "http://llm-gateway-api:8000"
+client_name = "document_store"
+# API key is read from the LLM_GATEWAY_KEY environment variable, never stored here
+
+[models]
+embedding = "bge-m3"
+extraction = "qwen2.5:7b-instruct"
+generation = "qwen2.5:7b-instruct"
+
+[chunking]
+max_chars = 2000
+overlap_chars = 200
+
+[ocr]
+confidence_threshold = 0.6
+
+[models]
+embedding = "bge-m3"
+embedding_dimensions = 1024
+extraction = "qwen2.5:7b-instruct"
+generation = "qwen2.5:7b-instruct"

@@ -1,0 +1,33 @@
+{
+  "name": "document_store",
+  "build": { "dockerfile": "Dockerfile" },
+  "runArgs": ["--network=llm_net", "--shm-size=2g"],
+  "containerEnv": {
+    "LLM_GATEWAY_URL": "http://llm-gateway-api:8000",
+    "LLM_CLIENT_NAME": "case-dms"
+  },
+  "workspaceFolder": "/workspace",
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/workspace,type=bind",
+    "source=document-store-paddle-cache,target=/root/.paddleocr,type=volume"
+  ],
+  "postCreateCommand": "uv sync",
+  "forwardPorts": [8000],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "mtxr.sqltools",
+        "mtxr.sqltools-driver-sqlite"
+      ],
+      "settings": {
+        "python.analysis.exclude": ["**/.venv/**"],
+        "files.watcherExclude": {
+          "**/.venv/**": true
+        }
+      }
+    }
+  }
+}
