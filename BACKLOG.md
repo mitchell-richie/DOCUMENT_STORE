@@ -194,8 +194,8 @@ flowchart LR
 - Duplicate paths are recorded as additional locations
 
 *Acceptance criteria:*
-- [ ] Two identical files in different folders produce one `source_file` and two location records
-- [ ] Duplicate report can be generated
+- [x] Two identical files in different folders produce one `source_file` and two location records
+- [x] Duplicate report can be generated
 
 **STORY-2.3: Document classification rules**
 

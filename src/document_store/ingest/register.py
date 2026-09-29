@@ -36,13 +36,15 @@ class UnsupportedFileError(ValueError):
 @dataclass(frozen=True)
 class RegisterResult:
     source_file_id: int
-    created: bool
+    created: bool          # True if the content was not previously registered
+    location_created: bool  # True if this path was not previously recorded
 
 
 @dataclass
 class FolderSummary:
-    registered: int = 0
-    existing: int = 0
+    registered: int = 0     # new content
+    existing: int = 0       # content already registered at this path
+    new_locations: int = 0  # content already registered, but at a new path
     skipped: list[Path] = field(default_factory=list)
 
 
@@ -93,13 +95,18 @@ def register_file(
         file_id = conn.execute(
             "SELECT id FROM source_file WHERE sha256 = ?", (digest,)
         ).fetchone()["id"]
-        conn.execute(
+        location_cursor = conn.execute(
             "INSERT OR IGNORE INTO source_file_location (source_file_id, path, first_seen_at) "
             "VALUES (?, ?, ?)",
             (file_id, str(path), timestamp),
         )
+        location_created = location_cursor.rowcount == 1
 
-    return RegisterResult(source_file_id=file_id, created=created)
+    return RegisterResult(
+        source_file_id=file_id,
+        created=created,
+        location_created=location_created,
+    )
 
 
 def register_folder(conn: sqlite3.Connection, root: Path) -> FolderSummary:
@@ -116,6 +123,8 @@ def register_folder(conn: sqlite3.Connection, root: Path) -> FolderSummary:
         result = register_file(conn, path)
         if result.created:
             summary.registered += 1
+        elif result.location_created:
+            summary.new_locations += 1
         else:
             summary.existing += 1
     return summary
