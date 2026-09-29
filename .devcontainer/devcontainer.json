@@ -8,7 +8,8 @@
   },
   "workspaceFolder": "/workspace",
   "mounts": [
-    "source=${localWorkspaceFolder},target=/workspace,type=bind"
+    "source=${localWorkspaceFolder},target=/workspace,type=bind",
+    "source=document-store-paddle-cache,target=/root/.paddleocr,type=volume"
   ],
   "postCreateCommand": "uv sync",
   "forwardPorts": [8000],

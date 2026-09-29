@@ -831,6 +831,7 @@ The evaluation is repeated whenever the embedding model, OCR engine, chunker, or
 | Handling of privileged material | Open | Determine whether privileged items are tagged and excluded from cloud features |
 | Adoption of Kuzu | Open | Reassess if multi-hop queries become common |
 | Export formats for legal advisers | Open | Likely PDF chronologies and CSV |
+| PaddlePaddle 3.3.1 oneDNN bug on CPU detection model | Known issue | Worked around by disabling `enable_mkldnn`; re-test when paddlepaddle is upgraded; track for removal of the workaround |
 
 ---
 

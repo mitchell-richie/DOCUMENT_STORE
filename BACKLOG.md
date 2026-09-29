@@ -138,8 +138,9 @@ flowchart LR
 - Reports CPU or GPU mode
 
 *Acceptance criteria:*
-- [ ] Sample image OCR completes and returns text
-- [ ] Confidence values are present in the output
+- [x] Sample image OCR completes and returns text
+- [x] Confidence values are present in the output
+- [x] Reports CPU or GPU mode
 
 **STORY-1.7: Test harness and fixtures**
 

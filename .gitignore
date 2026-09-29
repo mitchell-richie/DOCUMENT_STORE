@@ -15,6 +15,7 @@ case.sqlite-*
 originals/
 cache/
 logs/
+outputs/
 
 # Editors
 .vscode/*
