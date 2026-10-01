@@ -172,6 +172,7 @@ flowchart LR
 | STORY-2.1 | File registration with SHA-256 | P0 | S | STORY-1.3 |
 | STORY-2.2 | Duplicate detection | P0 | S | STORY-2.1 |
 | STORY-2.3 | Document classification rules | P0 | M | STORY-1.2, STORY-2.1 |
+| STORY-2.3a | Document the originals folder convention (architecture and README) | P1 | S | |
 | STORY-2.4 | Routing engine | P0 | M | STORY-2.3 |
 | STORY-2.5 | Classification review for unclassified documents | P1 | S | STORY-2.4 |
 | STORY-2.6 | Ingestion CLI | P1 | S | STORY-2.1 to STORY-2.4 |

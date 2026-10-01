@@ -31,6 +31,13 @@ overlap_chars = 200
 
 [ocr]
 confidence_threshold = 0.6
+
+[classification]
+default_doc_class = "other"
+
+[[classification.rules]]
+doc_class = "in_camera"
+pattern = "in_camera/**"
 """
 
 

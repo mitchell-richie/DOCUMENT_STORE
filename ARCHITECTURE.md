@@ -1,11 +1,17 @@
 # Case Document Management System: Architecture
 
-**Status:** Draft v0.6
+**Status:** Draft v0.7
+
 **Scope:** Single-user, local-first system for managing, searching, and analysing documents and communications relating to an ongoing court case.
 
 **Changes from v0.3:** Added corpus sizing, hardware constraints, and model selection; introduced PaddleOCR as the primary OCR engine; added document routing for in camera material and bank statements; added tiered extraction to manage CPU-bound processing.
+
 **Changes from v0.4** Join tables added for message participants and event entities. Constraints, enumerations, and indexes are now defined. Review kinds and thread confidence are specified. Migration `0001_initial.sql` is the authoritative schema; this section describes it.
+
 **Changes from v0.5** Reflect implementation of vector tables for chunks as in `0002_fts.sql`
+
+**Changes from v0.6** Document expected folder structure for input documents
+
 ---
 
 ## 1. Purpose and Scope
@@ -377,6 +383,27 @@ flowchart TD
 - **Bank statements** are identified by document class (assigned by filename pattern, folder, or user selection). They are registered for traceability and are excluded from chunking, embedding, and LLM extraction. Where useful, an `external_record` links to the output of the separate categorisation tool.
 - **In camera material** is always processed locally. Cloud processing is disabled for this class regardless of global settings.
 - **Unclassified documents** default to the most restrictive route until classified.
+
+### Classification Convention
+
+Document classes are assigned from each file's path relative to the `originals/` root. Rules are defined in `config.toml` under `[classification]`, evaluated in order, with the first match winning.
+
+| Folder or pattern | Class | Route |
+|-------------------|-------|-------|
+| `in_camera/**` | `in_camera` | `local_only` |
+| `**/bank_statement*` | `financial_statement` | `external` |
+| `**/receipt*` | `receipt` | `standard` |
+| `court_filings/**` | `court_filing` | `standard` |
+| `correspondence/**` | `correspondence` | `standard` |
+| (no match) | `other` (default) | `local_only` |
+
+**Dependency on folder structure:** classification is only as reliable as the folder layout. The system does not infer class from document content. Documents placed outside the expected folders fall to `other` and route to `local_only`, which is a safe default but may not reflect their actual nature. STORY-2.5 provides a review path for these.
+
+**Matching rules:**
+
+- Patterns are gitignore-style globs (`**`, `*`) matched against the relative path
+- Matching is case-insensitive; patterns should be written in lowercase
+- Rule order matters: more specific rules precede general ones
 
 ### 8.2 Ingestion Pipeline
 
@@ -776,6 +803,23 @@ sequenceDiagram
 
 The startup check in the devcontainer confirms that both health and embedding endpoints are reachable before any processing begins.
 
+### 10.5 Originals Folder Convention
+
+The `originals/` folder is organised by document class. The structure below is required for the default classification rules to work as intended.
+
+```
+originals/
+├── in_camera/            # in camera material (local processing only)
+├── court_filings/        # filed or served court documents
+├── correspondence/       # letters and other correspondence
+└── (other folders)      # any other material; classified as "other"
+```
+
+Bank statements and receipts are matched by filename pattern (`bank_statement*`, `receipt*`) and may sit in any folder beneath `originals/`.
+
+Email (MBOX) imports are handled as a separate ingestion path (EPIC-5) and are not subject to this folder convention; their classification is assigned at import.
+
+**Rationale:** folder-based classification is simple to inspect and to correct manually, and it keeps the classification decision visible in the filesystem. Changing rules requires editing `config.toml`, not code.
 
 ---
 
@@ -872,3 +916,4 @@ gantt
 | v0.3 | 7 | Initial data model |
 | v0.4 | 5, 10 | Gateway integration |
 | v0.5 | 7 | Added `message_participant`, `event_entity`, `source_file_location`, `schema_migrations`; defined enumerations and constraints; specified `review_item.kind` values and `email_message.thread_confidence` |
+| v0.7 | 8.1, 10.5 | Documented classification convention and originals folder structure |

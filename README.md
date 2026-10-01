@@ -54,6 +54,32 @@ devcontainer; nothing else needs to be installed on the host.
 6. Open the folder in VS Code and select **Reopen in Container** when
    prompted. This builds the devcontainer and runs `uv sync`.
 
+## Originals Folder Structure
+
+Case documents are placed in `originals/`, organised by document class:
+
+```
+originals/
+├── in_camera/          # in camera material; processed locally only
+├── court_filings/     # filed or served court documents
+├── correspondence/    # letters and other correspondence
+└── ...                # any other folders; files are classified as "other"
+```
+
+Classification is based on these folder names and on filename patterns
+(e.g. `bank_statement*`, `receipt*`). Rules are in `config/config.toml`
+under `[classification]`.
+
+**Important:**
+
+- Files placed outside these folders are classified as `other` and processed
+  locally only. They are still searchable, but they may need manual
+  reclassification (STORY-2.5).
+- Bank statements are excluded from chunking and embedding; they are handled
+  by a separate tool.
+- Folder names must match the rules in `config.toml` exactly (case-insensitive).
+  If you rename a folder, update the rules to match.
+  
 ## Verifying the Setup
 
 Run these inside the devcontainer terminal:
