@@ -51,6 +51,7 @@ class Settings:
     chunk_overlap_chars: int
     ocr_confidence_threshold: float
     classification: ClassificationConfig
+    routing: RoutingConfig
 
 
 def load_settings(path: Path = DEFAULT_CONFIG_PATH) -> Settings:
@@ -92,6 +93,13 @@ def load_settings(path: Path = DEFAULT_CONFIG_PATH) -> Settings:
         ),
         default_doc_class=classification_raw["default_doc_class"],
     )
+
+    try:
+        routing_raw = raw['routing']
+    except KeyError as exc:
+        raise ConfigError(f"Missing configuration section: {exc.args[0]}") from exc
+    routing=RoutingConfig(mapping=dict(routing_raw))
+
     return Settings(
         paths=Paths(
             project_dir=project_dir,
@@ -115,6 +123,7 @@ def load_settings(path: Path = DEFAULT_CONFIG_PATH) -> Settings:
         chunk_overlap_chars=int(chunking_raw["overlap_chars"]),
         ocr_confidence_threshold=float(ocr_raw["confidence_threshold"]),
         classification=classification,
+        routing=routing,
     )
 
 
@@ -128,3 +137,8 @@ class ClassificationRule:
 class ClassificationConfig:
     rules: tuple[ClassificationRule, ...]
     default_doc_class: str
+
+
+@dataclass(frozen=True)
+class RoutingConfig:
+    mapping: dict[str, str]

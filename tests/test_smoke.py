@@ -38,6 +38,14 @@ default_doc_class = "other"
 [[classification.rules]]
 doc_class = "in_camera"
 pattern = "in_camera/**"
+
+[routing]
+in_camera = "local_only"
+financial_statement = "external"
+receipt = "standard"
+court_filing = "standard"
+correspondence = "standard"
+other = "local_only"
 """
 
 

@@ -58,3 +58,13 @@ pattern = "court_filings/**"
 [[classification.rules]]
 doc_class = "correspondence"
 pattern = "correspondence/**"
+
+[routing]
+# Every doc_class must have an entry. in_camera is always forced to
+# local_only regardless of what is configured here (see constants.py).
+in_camera = "local_only"
+financial_statement = "external"
+receipt = "standard"
+court_filing = "standard"
+correspondence = "standard"
+other = "local_only"
