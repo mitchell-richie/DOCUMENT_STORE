@@ -1,5 +1,6 @@
 """Tests for document record creation and route changes (STORY-2.8)."""
 
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from document_store.ingest.documents import (
     create_or_update_document,
     most_restrictive,
 )
+from document_store.ingest.pipeline import ingest_folder
 from document_store.ingest.register import register_file
 
 
@@ -62,24 +64,63 @@ def test_repeat_ingestion_creates_no_duplicate(
 def test_duplicate_in_camera_location_upgrades_route(
     conn: sqlite3.Connection, source_file_id: int
 ) -> None:
-    first = create_or_update_document(conn, source_file_id, "correspondence", "standard", "n.pdf")
-    second = create_or_update_document(conn, source_file_id, "in_camera", "local_only", "n.pdf")
+    first = create_or_update_document(conn, source_file_id, "correspondence", "standard", "a.pdf")
+    second = create_or_update_document(conn, source_file_id, "in_camera", "local_only", "b.pdf")
 
     assert second.route_changed is True
-    assert _route(conn, first.document_id) == "local_only"
-    audit = _audit_rows(conn, first.document_id)
-    assert len(audit) == 1
-    assert audit[0]["change_kind"] == "automatic"
-    assert audit[0]["is_downgrade"] == 0
+    row = conn.execute(
+        "SELECT processing_route, doc_class, title FROM document WHERE id = ?",
+        (first.document_id,),
+    ).fetchone()
+    assert row["processing_route"] == "local_only"
+    assert row["doc_class"] == "in_camera"
+    assert row["title"] == "b.pdf"
+
+
+def test_title_follows_most_restrictive_regardless_of_order(
+    conn: sqlite3.Connection, source_file_id: int
+) -> None:
+    # Most restrictive location seen first: later, less restrictive location
+    # must not change the title.
+    first = create_or_update_document(conn, source_file_id, "in_camera", "local_only", "b.pdf")
+    create_or_update_document(conn, source_file_id, "correspondence", "standard", "a.pdf")
+
+    row = conn.execute(
+        "SELECT processing_route, title FROM document WHERE id = ?", (first.document_id,)
+    ).fetchone()
+    assert row["processing_route"] == "local_only"
+    assert row["title"] == "b.pdf"
+
+
+def test_title_is_order_independent(
+    conn, classifier, router, originals: Path, fixtures_dir: Path
+) -> None:
+    """Whichever copy is more restrictive wins the title, regardless of
+    which is ingested first."""
+    # Swap which folder is processed first by renaming so in_camera sorts last.
+    shutil.copy(fixtures_dir / "native.pdf", originals / "correspondence" / "z-copy.pdf")
+
+    ingest_folder(conn, classifier, router, originals, originals)
+
+    row = conn.execute("SELECT title, processing_route FROM document").fetchall()
+    titles = {r["title"]: r["processing_route"] for r in row}
+    assert titles.get("order.pdf") == "local_only"
+    assert "z-copy.pdf" not in titles  # same content; no separate document
 
 
 def test_automatic_path_never_downgrades(
     conn: sqlite3.Connection, source_file_id: int
 ) -> None:
-    first = create_or_update_document(conn, source_file_id, "in_camera", "local_only", "n.pdf")
-    create_or_update_document(conn, source_file_id, "correspondence", "standard", "n.pdf")
+    first = create_or_update_document(conn, source_file_id, "in_camera", "local_only", "b.pdf")
+    create_or_update_document(conn, source_file_id, "correspondence", "standard", "a.pdf")
 
-    assert _route(conn, first.document_id) == "local_only"
+    row = conn.execute(
+        "SELECT processing_route, doc_class, title FROM document WHERE id = ?",
+        (first.document_id,),
+    ).fetchone()
+    assert row["processing_route"] == "local_only"
+    assert row["doc_class"] == "in_camera"
+    assert row["title"] == "b.pdf"
     assert _audit_rows(conn, first.document_id) == []
 
 

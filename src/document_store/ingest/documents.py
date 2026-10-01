@@ -62,6 +62,11 @@ def create_or_update_document(
     If a document already exists, the route becomes the more restrictive of
     the existing route and the incoming route. A less restrictive incoming
     route is ignored: automatic changes never downgrade.
+
+    When an upgrade occurs, doc_class and title are replaced with the values
+    from the registration that caused the upgrade, so the title always
+    reflects whichever location made the document most restrictive,
+    regardless of ingestion order.
     """
     timestamp = now or _now()
     with conn:
@@ -88,8 +93,8 @@ def create_or_update_document(
             return DocumentResult(document_id=document_id, created=False, route_changed=False)
 
         conn.execute(
-            "UPDATE document SET processing_route = ?, doc_class = ? WHERE id = ?",
-            (effective, doc_class, document_id),
+            "UPDATE document SET processing_route = ?, doc_class = ?, title = ? WHERE id = ?",
+            (effective, doc_class, title, document_id),
         )
         conn.execute(
             "INSERT INTO document_route_change "
