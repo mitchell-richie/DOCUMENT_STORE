@@ -345,6 +345,8 @@ erDiagram
 | `review_item.kind` | `entity_mention`, `event`, `alias`, `relationship`, `classification`, `ocr` |
 | `review_item.decision` | `confirmed`, `edited`, `rejected` (or null while pending) |
 
+Route restrictiveness (most to least restrictive): local_only, index_only, external, standard. Defined in code, not configuration, because it encodes the safety meaning of each route. Used to resolve duplicate content at multiple locations and to prevent automatic downgrades.
+
 ### 7.4 Design Notes
 
 - **Join tables for participants and event entities.** `message_participant` supports the communication chain view (who sent or received each message). `event_entity` supports queries such as "all events involving this person".
@@ -377,6 +379,8 @@ flowchart TD
     E --> H[Local processing;<br/>cloud extraction permitted if enabled]
     F --> G
 ```
+
+Routing is validated at startup: every doc_class must have a configured route, and in_camera is forced to local_only even if configured otherwise, with a warning logged.
 
 **Classification rules:**
 

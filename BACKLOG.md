@@ -177,6 +177,7 @@ flowchart LR
 | STORY-2.5 | Classification review for unclassified documents | P1 | S | STORY-2.4 |
 | STORY-2.6 | Ingestion CLI | P1 | S | STORY-2.1 to STORY-2.4 |
 | STORY-2.7 | Ingestion run log | P2 | S | STORY-2.6 |
+| STORY-2.8 | Document record creation (route-aware, idempotent) | P0 | M | STORY-2.1, STORY-2.4 |
 
 **STORY-2.1: File registration with SHA-256**
 
@@ -216,10 +217,10 @@ flowchart LR
 - Cloud eligibility is determined solely by route
 
 *Acceptance criteria:*
-- [ ] `in_camera` always routes to `local_only`
-- [ ] `financial_statement` routes to `external`
-- [ ] Unclassified documents route to `local_only`
-- [ ] A unit test covers every class-to-route mapping
+- [x] `in_camera` always routes to `local_only`
+- [x] `financial_statement` routes to `external`
+- [x] Unclassified documents route to `local_only`
+- [x] A unit test covers every class-to-route mapping
 
 **STORY-2.5: Classification review for unclassified documents**
 
@@ -246,6 +247,25 @@ flowchart LR
 
 *Acceptance criteria:*
 - [ ] Run records start and end time, counts, and parameters
+
+**STORY-2.8: Document record creation**
+
+*Acceptance criteria:*
+
+- [x] Registering a file with a supported type creates exactly one top-level `document` row for its `source_file`
+- [x] Re-running creates no duplicate documents
+- [x] A file present at multiple paths takes the most restrictive route across all locations, and the document row is updated if a later location is more restrictive
+- [ ] `financial_statement` documents create a `document` row and an `external_record` row, and no chunks
+- [x] `doc_class` and `processing_route` are stored on the document
+- [x] The document row's `title` defaults to the file name
+
+*Schema change required:* a partial unique index so one top-level document exists per source file:
+
+```sql
+CREATE UNIQUE INDEX idx_document_source_top_level
+    ON document(source_file_id)
+    WHERE parent_id IS NULL;
+```
 
 ### EPIC-3: Text Extraction and OCR
 
