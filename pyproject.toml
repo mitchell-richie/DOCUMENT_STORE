@@ -38,4 +38,5 @@ src = ["src", "tests"]
 testpaths = ["tests"]
 markers = [
     "ocr: requires PaddleOCR models; slow, downloads on first run",
+    "integration: end-to-end test using the CLI, config file, and database",
 ]
