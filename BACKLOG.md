@@ -237,8 +237,8 @@ flowchart LR
 - Reports counts: new, duplicate, skipped, routed by class
 
 *Acceptance criteria:*
-- [ ] Command runs on a folder of fixtures and prints a summary
-- [ ] Exit code non-zero on fatal error
+- [x] Command runs on a folder of fixtures and prints a summary
+- [x] Exit code non-zero on fatal error
 
 **STORY-2.7: Ingestion run log**
 

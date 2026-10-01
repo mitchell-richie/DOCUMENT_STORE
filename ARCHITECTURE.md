@@ -14,6 +14,8 @@
 
 **Changes from v0.7** Document route types and restrictions
 
+**Changes from v0.8** Document record creation (STORY-2.8) and the ingestion CLI (STORY-2.6) are implemented. This adds the `document_route_change` audit table, documents the title-follows-most-restrictive rule, and updates the ingestion pipeline description to match the implemented behaviour.
+
 ---
 
 ## 1. Purpose and Scope
@@ -331,6 +333,9 @@ erDiagram
 | `review_item` | Pending or decided machine suggestions | id, kind, payload, created_at, decided_at, decision | `kind` restricted; `decision` restricted |
 | `processing_run` | Audit record of pipeline runs | id, stage, model_id, parameters, started_at, finished_at | — |
 | `schema_migrations` | Applied migration versions | version, name, applied_at | Managed by the migration runner |
+| `document_route_change` | Audit trail for every change to a document's processing route | id, document_id, from_route, to_route, change_kind, is_downgrade, risk_acknowledged, reason, changed_at | `change_kind` is `automatic` or `manual`; `from_route`/`to_route` restricted to the routes in Section 7.3.1 |
+
+> `document` carries a partial unique index, `idx_document_source_top_level`, on `source_file_id` where `parent_id IS NULL`. This guarantees exactly one top-level document per source file; attachments and email messages are children via `parent_id` and are not constrained by this index (EPIC-5).
 
 ## 7.3 Enumerations
 
@@ -380,6 +385,11 @@ Processing routes are ranked by restrictiveness, most restrictive first:
 - **Vector table naming.** The embedding model identifier is slugified and combined with the vector dimension to form the table name (vector_table_name()). This replaces the single-table-with-model_id-column design from v0.5, because sqlite-vec's vec0 tables are fixed-dimension and do not support a discriminator column cleanly.
 - **No foreign key from vector tables to `chunk`**. Virtual tables cannot carry foreign keys. Deleting a chunk does not automatically remove its vectors; cleanup is an application responsibility, to be implemented alongside re-embedding (EPIC-4).
 - **FTS5 sync.** Triggers on chunk keep chunk_fts current, including on cascade deletes from document or source file removal.
+- **Document creation is idempotent per source file.** Re-ingesting a file updates its existing document rather than creating a duplicate, enforced by `idx_document_source_top_level`.
+- **Duplicate content takes the most restrictive route.** Where identical content exists at several locations, the document's route is the most restrictive across all registrations seen so far (Section 7.3.1). Automatic ingestion only ever upgrades a document's route; it never downgrades one.
+- **Title and class follow the most restrictive location.** When an automatic upgrade occurs, `doc_class` and `title` are replaced with the values from the registration that caused the upgrade. This keeps the displayed title and class consistent with the document's most restrictive known location, independent of the order in which files are ingested. A location that would downgrade the route leaves the title and class unchanged.
+- **Manual route changes are separate from automatic ones.** A manual change (`change_route()`) can move a document to any route, including a downgrade, but a downgrade requires `risk_acknowledged=True` and is always recorded with `change_kind = 'manual'`. A manual change does not alter `doc_class` or `title`; only automatic upgrades do. If manual reclassification is added (STORY-2.5), it should apply the same title and class rule as automatic upgrades, so the two paths stay consistent.
+- **Every route change is audited**, whether automatic or manual, in `document_route_change`, including the reason and whether a downgrade's risk was acknowledged.
 
 ---
 
@@ -452,7 +462,21 @@ flowchart TD
     E3 --> H
     E4 --> H
     H --> I[Create document record]
-    I --> J[Structure-aware chunking]
+    I --> S[File added]
+    S[File added] --> T{Already registered?<br/>SHA-256 match}
+    T -- Yes --> U[Record new location if not already known]
+    T -- No --> V[Register source_file and location]
+    U --> W[Classify path: doc_class]
+    V --> W
+    W --> Y[Determine processing_route from doc_class]
+    Y --> Z{Document already exists<br/>for this source_file?}
+    Z -- No --> AA[Create document:<br/>title, doc_class, route]
+    Z -- Yes --> AB{Incoming route more restrictive<br/>than current?}
+    AB -- No --> AC[No change]
+    AB -- Yes --> AD[Upgrade route, doc_class, and title;<br/>record automatic audit entry]
+    AA --> J[Structure-aware chunking]
+    AC --> J
+    AD --> J
     J --> K[Embed chunks via Ollama]
     K --> L[Update FTS5 and sqlite-vec]
     L --> M{Extraction tier applies?}
@@ -461,6 +485,22 @@ flowchart TD
     N --> P
     X --> P
 ```
+
+**Notes:**
+
+- Classification requires the file to be located beneath the configured originals root; a path outside it cannot be classified and is rejected before registration proceeds.
+- Per-file failures (I/O errors, database errors) are caught and logged individually; a single failing file does not stop the rest of the run.
+- Chunking, embedding, and extraction are not yet wired into this pipeline; they begin in EPIC-4. `external` and `index_only` routed documents are expected to bypass these steps entirely once implemented.
+
+### 8.2.1 Ingestion CLI
+
+Ingestion is run via `python -m document_store.ingest [path]`, which:
+
+1. Loads configuration and builds the classifier and router, failing fast on misconfiguration.
+2. Validates that the target path is inside the originals root.
+3. Runs the pipeline above over every supported file beneath the path.
+4. Reports counts of documents created, existing, and upgraded, plus skipped and failed files.
+5. Exits non-zero if any file failed, or if configuration or path validation failed.
 
 ### 8.3 OCR Flow
 
@@ -942,3 +982,4 @@ gantt
 | v0.5 | 7 | Added `message_participant`, `event_entity`, `source_file_location`, `schema_migrations`; defined enumerations and constraints; specified `review_item.kind` values and `email_message.thread_confidence` |
 | v0.7 | 8.1, 10.5 | Documented classification convention and originals folder structure |
 | v0.8 | 7.3, 7.3.1 | Route restrictiveness defined in code; enumerations listed with rules for duplicate handling and downgrades |
+| v0.9 | 7.2, 7.4, 8.2 | Added `document_route_change` table and unique index note; documented title/class-follows-most-restrictive rule; updated ingestion pipeline diagram and added CLI description |
