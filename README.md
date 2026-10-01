@@ -79,7 +79,39 @@ under `[classification]`.
   by a separate tool.
 - Folder names must match the rules in `config.toml` exactly (case-insensitive).
   If you rename a folder, update the rules to match.
-  
+
+## Document Routing
+
+Each document has a processing route that controls what may happen to its
+content. Routes, from most to least restrictive:
+
+| Route | Meaning |
+|-------|---------|
+| `local_only` | Processed locally only; never sent to cloud services |
+| `index_only` | Registered and searchable by metadata; not chunked or embedded |
+| `external` | Handled by another tool (e.g. bank statements); not chunked or embedded |
+| `standard` | Processed normally; cloud services permitted if enabled |
+
+### How routes are assigned
+
+- At ingestion, a document's route comes from its class (`[routing]` in `config.toml`).
+- If identical content exists at several locations, the **most restrictive** route applies.
+- Automatic processing only ever makes a document more restrictive. It never downgrades one.
+
+### Changing a document's route
+
+Route changes are manual and recorded in the `document_route_change` table.
+
+- **Upgrading** (making a document more restrictive) needs no acknowledgment.
+- **Downgrading** (making it less restrictive, for example after material has been filed publicly) requires explicit acknowledgment of the risk. The change is refused without it.
+
+Every change records the previous and new route, the reason, and whether the
+risk was acknowledged.
+
+> Downgrading an in camera document may expose its content to processing that
+> the original classification was designed to prevent. Confirm that you are
+> entitled to do so before acknowledging the risk.
+
 ## Verifying the Setup
 
 Run these inside the devcontainer terminal:

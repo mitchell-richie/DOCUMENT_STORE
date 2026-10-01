@@ -12,6 +12,8 @@
 
 **Changes from v0.6** Document expected folder structure for input documents
 
+**Changes from v0.7** Document route types and restrictions
+
 ---
 
 ## 1. Purpose and Scope
@@ -330,12 +332,13 @@ erDiagram
 | `processing_run` | Audit record of pipeline runs | id, stage, model_id, parameters, started_at, finished_at | — |
 | `schema_migrations` | Applied migration versions | version, name, applied_at | Managed by the migration runner |
 
-### 7.3 Enumerations
+## 7.3 Enumerations
 
 | Field | Allowed Values |
 |-------|----------------|
 | `document.doc_class` | `correspondence`, `court_filing`, `in_camera`, `financial_statement`, `receipt`, `other` |
-| `document.processing_route` | `standard`, `local_only`, `index_only`, `external` |
+| `document.processing_route` | `local_only`, `index_only`, `external`, `standard` (in order of restrictiveness; see below) |
+| `document_route_change.change_kind` | `automatic`, `manual` |
 | `entity.entity_type` | `person`, `organisation`, `place`, `issue` |
 | `message_participant.role` | `from`, `to`, `cc` |
 | `event.date_precision` | `exact`, `month`, `year`, `approximate`, `unknown` |
@@ -345,7 +348,24 @@ erDiagram
 | `review_item.kind` | `entity_mention`, `event`, `alias`, `relationship`, `classification`, `ocr` |
 | `review_item.decision` | `confirmed`, `edited`, `rejected` (or null while pending) |
 
-Route restrictiveness (most to least restrictive): local_only, index_only, external, standard. Defined in code, not configuration, because it encodes the safety meaning of each route. Used to resolve duplicate content at multiple locations and to prevent automatic downgrades.
+### 7.3.1 Route Restrictiveness
+
+Processing routes are ranked by restrictiveness, most restrictive first:
+
+| Rank | Route | Meaning |
+|------|-------|---------|
+| 3 | `local_only` | Processed locally only; never sent to cloud services |
+| 2 | `index_only` | Registered and searchable by metadata; not chunked or embedded |
+| 1 | `external` | Handled by another tool; not chunked or embedded |
+| 0 | `standard` | Processed normally; cloud services permitted if enabled |
+
+**Rules:**
+
+- **Source of truth.** The ranking is defined in code (`ROUTE_RESTRICTIVENESS` in `constants.py`). The set of valid routes is derived from it. It is not configurable, because it encodes the safety meaning of each route.
+- **Duplicate content.** Where identical content is registered at several locations, the document takes the most restrictive route across them.
+- **Automatic changes never downgrade.** Ingestion may only move a document to a more restrictive route.
+- **Manual downgrades require acknowledgment.** A manual change to a less restrictive route requires explicit acknowledgment of the risk and is recorded in `document_route_change`.
+- **Schema consistency.** The `CHECK` constraints on `document.processing_route` and `document_route_change` must list the same routes as the code. Tests in `tests/test_route_consistency.py` enforce this.
 
 ### 7.4 Design Notes
 
@@ -921,3 +941,4 @@ gantt
 | v0.4 | 5, 10 | Gateway integration |
 | v0.5 | 7 | Added `message_participant`, `event_entity`, `source_file_location`, `schema_migrations`; defined enumerations and constraints; specified `review_item.kind` values and `email_message.thread_confidence` |
 | v0.7 | 8.1, 10.5 | Documented classification convention and originals folder structure |
+| v0.8 | 7.3, 7.3.1 | Route restrictiveness defined in code; enumerations listed with rules for duplicate handling and downgrades |
