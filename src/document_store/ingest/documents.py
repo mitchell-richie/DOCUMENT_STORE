@@ -92,10 +92,22 @@ def create_or_update_document(
         if ROUTE_RESTRICTIVENESS[effective] <= ROUTE_RESTRICTIVENESS[current]:
             return DocumentResult(document_id=document_id, created=False, route_changed=False)
 
-        conn.execute(
-            "UPDATE document SET processing_route = ?, doc_class = ?, title = ? WHERE id = ?",
-            (effective, doc_class, title, document_id),
-        )
+        has_manual_class = conn.execute(
+            "SELECT 1 FROM document_class_change WHERE document_id = ? LIMIT 1",
+            (document_id,),
+        ).fetchone() is not None
+
+        if has_manual_class:
+            # A manual classification decision is sticky: only the route moves.
+            conn.execute(
+                "UPDATE document SET processing_route = ? WHERE id = ?",
+                (effective, document_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE document SET processing_route = ?, doc_class = ?, title = ? WHERE id = ?",
+                (effective, doc_class, title, document_id),
+            )
         conn.execute(
             "INSERT INTO document_route_change "
             "(document_id, from_route, to_route, change_kind, is_downgrade, "
@@ -108,6 +120,45 @@ def create_or_update_document(
         return DocumentResult(document_id=document_id, created=False, route_changed=True)
 
 
+def _apply_route_change(
+    conn: sqlite3.Connection,
+    document_id: int,
+    current: str,
+    new_route: str,
+    reason: str,
+    risk_acknowledged: bool,
+    timestamp: str,
+) -> None:
+    """Change a route and audit it. Caller owns the transaction.
+
+    Raises:
+        RiskAcknowledgementRequired: for a downgrade without acknowledgment.
+    """
+    is_downgrade = ROUTE_RESTRICTIVENESS[new_route] < ROUTE_RESTRICTIVENESS[current]
+    if is_downgrade and not risk_acknowledged:
+        raise RiskAcknowledgementRequired(DOWNGRADE_WARNING)
+
+    conn.execute(
+        "UPDATE document SET processing_route = ? WHERE id = ?",
+        (new_route, document_id),
+    )
+    conn.execute(
+        "INSERT INTO document_route_change "
+        "(document_id, from_route, to_route, change_kind, is_downgrade, "
+        " risk_acknowledged, reason, changed_at) "
+        "VALUES (?, ?, ?, 'manual', ?, ?, ?, ?)",
+        (
+            document_id,
+            current,
+            new_route,
+            int(is_downgrade),
+            int(is_downgrade and risk_acknowledged),
+            reason,
+            timestamp,
+        ),
+    )
+
+
 def change_route(
     conn: sqlite3.Connection,
     document_id: int,
@@ -116,14 +167,7 @@ def change_route(
     risk_acknowledged: bool = False,
     now: str | None = None,
 ) -> bool:
-    """Manually change a document's route. Returns True if the route changed.
-
-    Upgrades need no acknowledgment. Downgrades require risk_acknowledged=True.
-
-    Raises:
-        RiskAcknowledgementRequired: for a downgrade without acknowledgment.
-        ValueError: for an unrecognised route or a missing document.
-    """
+    """Manually change a document's route. Returns True if the route changed."""
     if new_route not in PROCESSING_ROUTES:
         raise ValueError(f"Unrecognised processing_route {new_route!r}")
 
@@ -134,32 +178,10 @@ def change_route(
         ).fetchone()
         if row is None:
             raise ValueError(f"No document with id {document_id}")
-
         current = row["processing_route"]
         if new_route == current:
             return False
-
-        is_downgrade = ROUTE_RESTRICTIVENESS[new_route] < ROUTE_RESTRICTIVENESS[current]
-        if is_downgrade and not risk_acknowledged:
-            raise RiskAcknowledgementRequired(DOWNGRADE_WARNING)
-
-        conn.execute(
-            "UPDATE document SET processing_route = ? WHERE id = ?",
-            (new_route, document_id),
-        )
-        conn.execute(
-            "INSERT INTO document_route_change "
-            "(document_id, from_route, to_route, change_kind, is_downgrade, "
-            " risk_acknowledged, reason, changed_at) "
-            "VALUES (?, ?, ?, 'manual', ?, ?, ?, ?)",
-            (
-                document_id,
-                current,
-                new_route,
-                int(is_downgrade),
-                int(is_downgrade and risk_acknowledged),
-                reason,
-                timestamp,
-            ),
+        _apply_route_change(
+            conn, document_id, current, new_route, reason, risk_acknowledged, timestamp
         )
         return True
