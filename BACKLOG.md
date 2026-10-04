@@ -247,7 +247,7 @@ flowchart LR
 - Log file in `logs/`
 
 *Acceptance criteria:*
-- [ ] Run records start and end time, counts, and parameters
+- [x] Run records start and end time, counts, and parameters
 
 **STORY-2.8: Document record creation**
 
@@ -963,9 +963,12 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 **STORY-11.4: Logging**
 
 - Structured logs with levels; no document text logged at INFO or above
+- Shared logging module (logs.py)
+
 
 *Acceptance criteria:*
-- [ ] Log output contains no document text at INFO level
+- [x] Log output contains no document text at INFO level
+- [x] Logs persist in structured searchable format
 
 **STORY-11.5: Encryption guidance**
 

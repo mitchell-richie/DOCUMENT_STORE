@@ -18,6 +18,8 @@
 
 **Changes from v0.9** `other` is split into `unclassified` (system default, needs review) and `other` (reviewed, fits no named category). Adds the classification review workflow (STORY-2.5): listing, reclassification, the placeholder rule, and the sticky-class rule.
 
+**Changes from v0.10**  Ingestion run logging (STORY-2.7) and the shared logging module (STORY-11.4) are implemented. This adds a logging design section, records the run audit in `processing_run`, and updates the file layout and the ingestion CLI description.
+
 ---
 
 ## 1. Purpose and Scope
@@ -541,11 +543,22 @@ flowchart TD
 
 Ingestion is run via `python -m document_store.ingest [path]`, which:
 
-1. Loads configuration and builds the classifier and router, failing fast on misconfiguration.
+1. Configures console logging and loads configuration, failing fast on misconfiguration.
 2. Validates that the target path is inside the originals root.
-3. Runs the pipeline above over every supported file beneath the path.
-4. Reports counts of documents created, existing, and upgraded, plus skipped and failed files.
-5. Exits non-zero if any file failed, or if configuration or path validation failed.
+3. Opens a per-run log file in `logs/`.
+4. Records the run in `processing_run` (stage `ingest`), with the root and log file path in `parameters`.
+5. Runs the pipeline (Section 8.2) over every supported file beneath the path.
+6. Records the run summary in `processing_run.parameters` and sets `finished_at`.
+7. Prints counts of documents created, existing, and upgraded, plus skipped and failed files.
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| 0 | Run completed; no file failed |
+| 1 | Run completed; one or more files failed |
+| 2 | Configuration or path error; no processing performed |
+| 3 | Run crashed; `processing_run.finished_at` remains unset |
 
 ### 8.3 OCR Flow
 
@@ -785,6 +798,59 @@ stateDiagram-v2
     Confirmed --> [*]
 ```
 
+### 8.15 Run Audit
+
+Every processing run is recorded in `processing_run`:
+
+| Field | Content |
+|-------|---------|
+| `stage` | Name of the stage (e.g. `ingest`; later `extract`, `embed`, `extract_entities`) |
+| `model_id` | Model used, where applicable |
+| `parameters` | JSON: run inputs, plus a `summary` object once the run completes |
+| `started_at` | Set when the run begins |
+| `finished_at` | Set when the run completes; `NULL` indicates an incomplete or crashed run |
+
+**Rules:**
+
+- A run with `finished_at` unset is an incomplete run. It is never treated as a success.
+- Summaries contain counts and file names only, never document text.
+- Each run produces its own record, so repeated runs are individually traceable.
+
+### 8.16 Logging
+
+Logging is provided by a shared module, `document_store.logs`, used by all components.
+
+```mermaid
+flowchart LR
+    subgraph Modules
+        M1[ingest.pipeline]
+        M2[ingest.register]
+        M3[future stages]
+    end
+    M1 --> L[logging.getLogger&#40;__name__&#41;]
+    M2 --> L
+    M3 --> L
+    L --> C[Console handler<br/>text, INFO and above]
+    L --> F[Run log file<br/>JSON lines, INFO and above]
+    F --> D[(logs/&lt;stage&gt;-&lt;timestamp&gt;.log)]
+```
+
+| Output | Format | Scope | Purpose |
+|--------|--------|-------|---------|
+| Console | Plain text: time, level, logger, message | Entry point lifetime | Human review during a run |
+| Run log file | JSON lines: `time`, `level`, `logger`, `message`, optional `exc_info` | One file per run, in `logs/` | Machine-readable audit and filtering |
+
+**Functions:**
+
+| Function | Purpose |
+|----------|---------|
+| `configure_console()` | Attaches one console handler to the root logger; safe to call repeatedly |
+| `run_log_file(logs_dir, name, stamp)` | Context manager: writes JSON lines to `logs/<name>-<stamp>.log` for the duration of a run, then removes its handler and restores the root level |
+
+**Privacy rule:** log records contain file names, counts, identifiers, and timings. They never contain document text, quotations, or extracted content. This rule is enforced by a test that runs the ingestion CLI against fixture documents and asserts that fixture text does not appear in the log.
+
+**Level handling:** the root logger level is set for the duration of a run and restored afterwards, so logging does not depend on whether another library or test harness configured logging first.
+
 ---
 
 ## 9. Feature Views
@@ -874,6 +940,7 @@ flowchart TB
 | `config.toml` | Model names, chunk sizes, routing rules, gateway URL, paths | Yes |
 | `.env` | `LLM_GATEWAY_KEY` and other secrets | Yes, stored separately from project backup |
 | E: `models/` | Ollama model files (managed by the gateway stack) | Not required (re-downloadable) |
+| `logs/` | Per-run log files, `<stage>-<timestamp>.log`, JSON lines | Optional |
 
 ### 10.2 Configuration and Secrets
 
@@ -946,6 +1013,8 @@ Email (MBOX) imports are handled as a separate ingestion path (EPIC-5) and are n
 | Over-reliance on machine output | Review queue; citations on every answer; confirmed and proposed states distinguished |
 | Disk encryption | Full-disk encryption on the internal drive; external drive encrypted if it holds case data |
 | Court restrictions on in camera material | Confirm the applicable restrictions before ingestion; storage location and access to be reviewed accordingly |
+| Document content leaking into logs | Logging rule (Section 8.16); test asserting fixture text is absent from the run log |
+| Incomplete runs mistaken for successful ones | `processing_run.finished_at` unset until completion; exit code 3 for crashes |
 
 ---
 
@@ -1029,3 +1098,4 @@ gantt
 | v0.8 | 7.3, 7.3.1 | Route restrictiveness defined in code; enumerations listed with rules for duplicate handling and downgrades |
 | v0.9 | 7.2, 7.4, 8.2 | Added `document_route_change` table and unique index note; documented title/class-follows-most-restrictive rule; updated ingestion pipeline diagram and added CLI description |
 | v0.10 | 7.3, 7.3.2, 7.4, 8.1 | Split `other` into `unclassified` (system default) and `other` (reviewed); documented placeholder transition and sticky classification rules |
+| v0.11 | 8.2.1, 8.15, 8.16, 10.1, 11 | Run audit in `processing_run`; exit codes; shared logging module with text console and JSON-line run log; privacy rule and its enforcement |
