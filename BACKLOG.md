@@ -288,8 +288,8 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - Records page count and whether each page has a text layer
 
 *Acceptance criteria:*
-- [ ] Native fixture PDF returns text for each page with correct page numbers
-- [ ] Page-level text-layer status is recorded
+- [x] Native fixture PDF returns text for each page with correct page numbers
+- [x] Page-level text-layer status is recorded
 
 **STORY-3.2: Image-only page detection**
 
