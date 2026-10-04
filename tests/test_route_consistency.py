@@ -2,7 +2,7 @@
 
 import sqlite3
 
-from document_store.constants import PROCESSING_ROUTES, ROUTE_RESTRICTIVENESS
+from document_store.constants import DOC_CLASSES, PROCESSING_ROUTES, ROUTE_RESTRICTIVENESS
 
 
 def test_ranks_are_unique() -> None:
@@ -22,3 +22,11 @@ def test_schema_route_checks_match_constants(conn: sqlite3.Connection) -> None:
     ).fetchone()["sql"]
     for route in PROCESSING_ROUTES:
         assert f"'{route}'" in sql
+
+
+def test_schema_doc_class_checks_match_constants(conn: sqlite3.Connection) -> None:
+    sql = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'document'"
+    ).fetchone()["sql"]
+    for doc_class in DOC_CLASSES:
+        assert f"'{doc_class}'" in sql

@@ -33,7 +33,7 @@ overlap_chars = 200
 confidence_threshold = 0.6
 
 [classification]
-default_doc_class = "other"
+default_doc_class = "unclassified"
 
 [[classification.rules]]
 doc_class = "in_camera"
@@ -45,7 +45,8 @@ financial_statement = "external"
 receipt = "standard"
 court_filing = "standard"
 correspondence = "standard"
-other = "local_only"
+other = "standard"
+unclassified = "local_only"
 """
 
 

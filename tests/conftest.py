@@ -35,7 +35,8 @@ ROUTING = {
     "receipt": "standard",
     "court_filing": "standard",
     "correspondence": "standard",
-    "other": "local_only",
+    "other": "standard",
+    "unclassified": "local_only",
 }
 
 @pytest.fixture

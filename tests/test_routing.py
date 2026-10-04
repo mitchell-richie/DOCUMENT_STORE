@@ -16,7 +16,8 @@ FULL_MAPPING = {
     "receipt": "standard",
     "court_filing": "standard",
     "correspondence": "standard",
-    "other": "local_only",
+    "other": "standard",
+    "unclassified": "local_only"
 }
 
 
@@ -99,11 +100,11 @@ def test_route_document_defaults_unmatched_file_to_local_only(tmp_path: Path) ->
     target.touch()
 
     classifier = build_classifier(
-        ClassificationConfig(rules=(), default_doc_class="other")
+        ClassificationConfig(rules=(), default_doc_class="unclassified")
     )
     router = build_router(RoutingConfig(mapping=FULL_MAPPING))
 
     doc_class, route = route_document(classifier, router, originals, target)
 
-    assert doc_class == "other"
+    assert doc_class == "unclassified"
     assert route == "local_only"

@@ -20,7 +20,7 @@ def test_migrations_apply_to_empty_database(conn: sqlite3.Connection) -> None:
     applied = migrate(conn)
     assert applied == [
         "0001_initial.sql", "0002_fts.sql", "0003_document_ingest.sql",
-        "0004_document_class_change.sql"
+        "0004_document_class_change.sql", "0005_unclassified_class.sql"
         ]
 
     tables = {
