@@ -16,6 +16,8 @@
 
 **Changes from v0.8** Document record creation (STORY-2.8) and the ingestion CLI (STORY-2.6) are implemented. This adds the `document_route_change` audit table, documents the title-follows-most-restrictive rule, and updates the ingestion pipeline description to match the implemented behaviour.
 
+**Changes from v0.9** `other` is split into `unclassified` (system default, needs review) and `other` (reviewed, fits no named category). Adds the classification review workflow (STORY-2.5): listing, reclassification, the placeholder rule, and the sticky-class rule.
+
 ---
 
 ## 1. Purpose and Scope
@@ -341,7 +343,7 @@ erDiagram
 
 | Field | Allowed Values |
 |-------|----------------|
-| `document.doc_class` | `correspondence`, `court_filing`, `in_camera`, `financial_statement`, `receipt`, `other` |
+| `document.doc_class` | `correspondence`, `court_filing`, `in_camera`, `financial_statement`, `receipt`, `other`, `unclassified` |
 | `document.processing_route` | `local_only`, `index_only`, `external`, `standard` (in order of restrictiveness; see below) |
 | `document_route_change.change_kind` | `automatic`, `manual` |
 | `entity.entity_type` | `person`, `organisation`, `place`, `issue` |
@@ -372,6 +374,20 @@ Processing routes are ranked by restrictiveness, most restrictive first:
 - **Manual downgrades require acknowledgment.** A manual change to a less restrictive route requires explicit acknowledgment of the risk and is recorded in `document_route_change`.
 - **Schema consistency.** The `CHECK` constraints on `document.processing_route` and `document_route_change` must list the same routes as the code. Tests in `tests/test_route_consistency.py` enforce this.
 
+### 7.3.2 Document Classes
+
+| Class | Meaning | Set by | Default route |
+|-------|---------|--------|---------------|
+| `unclassified` | No classification rule matched; awaiting review | System | `local_only` |
+| `other` | Reviewed and deliberately assigned; fits no named category | Reviewer | `standard` |
+| `correspondence`, `court_filing`, `in_camera`, `financial_statement`, `receipt` | Named categories | System (rules) or reviewer | Per `[routing]` config |
+
+**Rules:**
+
+- `unclassified` is the system default. It is never a valid target for a manual reclassification.
+- `other` is a reviewed decision. Documents stay in `other` until a reviewer changes them, and they do not appear in the unclassified review list.
+- The default route for `unclassified` is `local_only`, so unreviewed material is never cloud-eligible.
+
 ### 7.4 Design Notes
 
 - **Join tables for participants and event entities.** `message_participant` supports the communication chain view (who sent or received each message). `event_entity` supports queries such as "all events involving this person".
@@ -390,6 +406,11 @@ Processing routes are ranked by restrictiveness, most restrictive first:
 - **Title and class follow the most restrictive location.** When an automatic upgrade occurs, `doc_class` and `title` are replaced with the values from the registration that caused the upgrade. This keeps the displayed title and class consistent with the document's most restrictive known location, independent of the order in which files are ingested. A location that would downgrade the route leaves the title and class unchanged.
 - **Manual route changes are separate from automatic ones.** A manual change (`change_route()`) can move a document to any route, including a downgrade, but a downgrade requires `risk_acknowledged=True` and is always recorded with `change_kind = 'manual'`. A manual change does not alter `doc_class` or `title`; only automatic upgrades do. If manual reclassification is added (STORY-2.5), it should apply the same title and class rule as automatic upgrades, so the two paths stay consistent.
 - **Every route change is audited**, whether automatic or manual, in `document_route_change`, including the reason and whether a downgrade's risk was acknowledged.
+- **Manual reclassification** (`reclassify()`) changes `doc_class` and route, leaves `title` unchanged, and is audited in `document_class_change` and `document_route_change`. A manual change does not use the title from any location, because a reviewer's decision has no source path.
+- **Placeholder transitions.** Moving a document from `unclassified` to any other class does not require a risk acknowledgment, even when the route becomes less restrictive. The `unclassified` route is a conservative placeholder, not a decision to protect the content. The transition is still audited, with `is_downgrade = 1` and `risk_acknowledged = 0`, and the reason records that it came from `unclassified`.
+- **All other downgrades require acknowledgment.** For example, `in_camera` → `correspondence` requires `risk_acknowledged=True`.
+- **Sticky classification.** Once a document has a manual class decision (a row in `document_class_change`), automatic ingestion may still upgrade its route for safety, but it does not change `doc_class` or `title`.
+- **`other` cannot be downgraded.** `standard` is the least restrictive route, so reclassifying a document from `other` can only keep or raise its route.
 
 ---
 
@@ -429,7 +450,7 @@ Document classes are assigned from each file's path relative to the `originals/`
 | `**/receipt*` | `receipt` | `standard` |
 | `court_filings/**` | `court_filing` | `standard` |
 | `correspondence/**` | `correspondence` | `standard` |
-| (no match) | `other` (default) | `local_only` |
+| (no match) | `unclassified` | `local_only` |
 
 **Dependency on folder structure:** classification is only as reliable as the folder layout. The system does not infer class from document content. Documents placed outside the expected folders fall to `other` and route to `local_only`, which is a safe default but may not reflect their actual nature. STORY-2.5 provides a review path for these.
 
@@ -438,6 +459,30 @@ Document classes are assigned from each file's path relative to the `originals/`
 - Patterns are gitignore-style globs (`**`, `*`) matched against the relative path
 - Matching is case-insensitive; patterns should be written in lowercase
 - Rule order matters: more specific rules precede general ones
+
+### 8.1a Classification Review
+
+Files that match no classification rule are assigned `unclassified` at ingestion, with the most restrictive route (`local_only`) as a safe default. Review surfaces these documents and lets a reviewer assign a definite class.
+
+```mermaid
+flowchart TD
+    A[List unclassified documents] --> B{Reviewer decision}
+    B -- Fits a named class --> C[Reclassify to that class]
+    B -- Fits no named class --> D[Reclassify to 'other']
+    C --> E{New route more restrictive?}
+    D --> E
+    E -- Yes or placeholder transition --> F[Apply: update class, route, audit]
+    E -- No, and not a placeholder --> G[Require risk acknowledgment]
+    G -- Acknowledged --> F
+    G -- Not acknowledged --> H[Reject: no change]
+```
+
+**Rules:**
+
+- A document cannot be manually reclassified to `unclassified`.
+- A downgrade from any class other than `unclassified` requires explicit acknowledgment of the risk (`--acknowledge-risk` on the CLI).
+- A reason is required for every reclassification and is stored in the audit trail.
+- Reclassification is available via `python -m document_store.ingest.review_cli`, with `list` and `reclassify` subcommands.
 
 ### 8.2 Ingestion Pipeline
 
@@ -983,3 +1028,4 @@ gantt
 | v0.7 | 8.1, 10.5 | Documented classification convention and originals folder structure |
 | v0.8 | 7.3, 7.3.1 | Route restrictiveness defined in code; enumerations listed with rules for duplicate handling and downgrades |
 | v0.9 | 7.2, 7.4, 8.2 | Added `document_route_change` table and unique index note; documented title/class-follows-most-restrictive rule; updated ingestion pipeline diagram and added CLI description |
+| v0.10 | 7.3, 7.3.2, 7.4, 8.1 | Split `other` into `unclassified` (system default) and `other` (reviewed); documented placeholder transition and sticky classification rules |

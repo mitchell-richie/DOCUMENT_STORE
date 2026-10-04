@@ -228,8 +228,9 @@ flowchart LR
 - User can assign a class; assignment is recorded
 
 *Acceptance criteria:*
-- [ ] Unclassified documents appear in the list
-- [ ] Reclassification updates route and is logged
+- [x] Unclassified documents appear in the list
+- [x] Reclassification updates route and is logged
+- [x] `unclassified` default class with `local_only` status
 
 **STORY-2.6: Ingestion CLI**
 

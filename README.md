@@ -112,6 +112,102 @@ risk was acknowledged.
 > the original classification was designed to prevent. Confirm that you are
 > entitled to do so before acknowledging the risk.
 
+## Classification Review
+
+Documents that match no classification rule are assigned the class
+`unclassified` and routed `local_only`, so they are never sent to cloud
+services until reviewed.
+
+### Listing unclassified documents
+
+```bash
+uv run python -m document_store.ingest.review_cli list
+```
+
+Output shows each document's ID, current route, and title.
+
+### Reclassifying a document
+
+```bash
+uv run python -m document_store.ingest.review_cli reclassify <id> <class> --reason "<why>"
+```
+
+- `<class>` must be a named class, such as `correspondence`, `court_filing`,
+  or `other`. `unclassified` cannot be assigned manually.
+- `--reason` is required and recorded in the audit trail.
+
+### Risk acknowledgment
+
+| Change | Acknowledgment needed? |
+|--------|------------------------|
+| `unclassified` → any class | No |
+| Any class → a more restrictive route | No |
+| Any class → a less restrictive route (for example `in_camera` → `correspondence`) | **Yes**: add `--acknowledge-risk` |
+
+If acknowledgment is needed and not given, the command prints a warning and
+makes no change.
+
+### Effects of reclassification
+
+- The document's class and route change. Its title does not change.
+- The change is recorded in `document_class_change` and `document_route_change`.
+- A reclassified document keeps its class when the file is re-ingested. Safety
+  still applies: if a later copy of the file is more restrictive, the route
+  is raised, but the class is not changed.
+```
+
+## Verification
+
+Nothing to run for documentation, but if you'd like to confirm the commands match the CLI:
+
+```bash
+uv run python -m document_store.ingest.review_cli --help
+uv run python -m document_store.ingest.review_cli reclassify --help
+```
+
+## Classification Review
+
+Documents that match no classification rule are assigned the class
+`unclassified` and routed `local_only`, so they are never sent to cloud
+services until reviewed.
+
+### Listing unclassified documents
+
+```bash
+uv run python -m document_store.ingest.review_cli list
+```
+
+Output shows each document's ID, current route, and title.
+
+### Reclassifying a document
+
+```bash
+uv run python -m document_store.ingest.review_cli reclassify <id> <class> --reason "<why>"
+```
+
+- `<class>` must be a named class, such as `correspondence`, `court_filing`,
+  or `other`. `unclassified` cannot be assigned manually.
+- `--reason` is required and recorded in the audit trail.
+
+### Risk acknowledgment
+
+| Change | Acknowledgment needed? |
+|--------|------------------------|
+| `unclassified` → any class | No |
+| Any class → a more restrictive route | No |
+| Any class → a less restrictive route (for example `in_camera` → `correspondence`) | **Yes**: add `--acknowledge-risk` |
+
+If acknowledgment is needed and not given, the command prints a warning and
+makes no change.
+
+### Effects of reclassification
+
+- The document's class and route change. Its title does not change.
+- The change is recorded in `document_class_change` and `document_route_change`.
+- A reclassified document keeps its class when the file is re-ingested. Safety
+  still applies: if a later copy of the file is more restrictive, the route
+  is raised, but the class is not changed.
+
 ## Verifying the Setup
 
 Run these inside the devcontainer terminal:
