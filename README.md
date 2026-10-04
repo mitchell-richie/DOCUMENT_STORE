@@ -54,6 +54,160 @@ devcontainer; nothing else needs to be installed on the host.
 6. Open the folder in VS Code and select **Reopen in Container** when
    prompted. This builds the devcontainer and runs `uv sync`.
 
+## Originals Folder Structure
+
+Case documents are placed in `originals/`, organised by document class:
+
+```
+originals/
+├── in_camera/          # in camera material; processed locally only
+├── court_filings/     # filed or served court documents
+├── correspondence/    # letters and other correspondence
+└── ...                # any other folders; files are classified as "other"
+```
+
+Classification is based on these folder names and on filename patterns
+(e.g. `bank_statement*`, `receipt*`). Rules are in `config/config.toml`
+under `[classification]`.
+
+**Important:**
+
+- Files placed outside these folders are classified as `other` and processed
+  locally only. They are still searchable, but they may need manual
+  reclassification (STORY-2.5).
+- Bank statements are excluded from chunking and embedding; they are handled
+  by a separate tool.
+- Folder names must match the rules in `config.toml` exactly (case-insensitive).
+  If you rename a folder, update the rules to match.
+
+## Document Routing
+
+Each document has a processing route that controls what may happen to its
+content. Routes, from most to least restrictive:
+
+| Route | Meaning |
+|-------|---------|
+| `local_only` | Processed locally only; never sent to cloud services |
+| `index_only` | Registered and searchable by metadata; not chunked or embedded |
+| `external` | Handled by another tool (e.g. bank statements); not chunked or embedded |
+| `standard` | Processed normally; cloud services permitted if enabled |
+
+### How routes are assigned
+
+- At ingestion, a document's route comes from its class (`[routing]` in `config.toml`).
+- If identical content exists at several locations, the **most restrictive** route applies.
+- Automatic processing only ever makes a document more restrictive. It never downgrades one.
+
+### Changing a document's route
+
+Route changes are manual and recorded in the `document_route_change` table.
+
+- **Upgrading** (making a document more restrictive) needs no acknowledgment.
+- **Downgrading** (making it less restrictive, for example after material has been filed publicly) requires explicit acknowledgment of the risk. The change is refused without it.
+
+Every change records the previous and new route, the reason, and whether the
+risk was acknowledged.
+
+> Downgrading an in camera document may expose its content to processing that
+> the original classification was designed to prevent. Confirm that you are
+> entitled to do so before acknowledging the risk.
+
+## Classification Review
+
+Documents that match no classification rule are assigned the class
+`unclassified` and routed `local_only`, so they are never sent to cloud
+services until reviewed.
+
+### Listing unclassified documents
+
+```bash
+uv run python -m document_store.ingest.review_cli list
+```
+
+Output shows each document's ID, current route, and title.
+
+### Reclassifying a document
+
+```bash
+uv run python -m document_store.ingest.review_cli reclassify <id> <class> --reason "<why>"
+```
+
+- `<class>` must be a named class, such as `correspondence`, `court_filing`,
+  or `other`. `unclassified` cannot be assigned manually.
+- `--reason` is required and recorded in the audit trail.
+
+### Risk acknowledgment
+
+| Change | Acknowledgment needed? |
+|--------|------------------------|
+| `unclassified` → any class | No |
+| Any class → a more restrictive route | No |
+| Any class → a less restrictive route (for example `in_camera` → `correspondence`) | **Yes**: add `--acknowledge-risk` |
+
+If acknowledgment is needed and not given, the command prints a warning and
+makes no change.
+
+### Effects of reclassification
+
+- The document's class and route change. Its title does not change.
+- The change is recorded in `document_class_change` and `document_route_change`.
+- A reclassified document keeps its class when the file is re-ingested. Safety
+  still applies: if a later copy of the file is more restrictive, the route
+  is raised, but the class is not changed.
+```
+
+## Verification
+
+Nothing to run for documentation, but if you'd like to confirm the commands match the CLI:
+
+```bash
+uv run python -m document_store.ingest.review_cli --help
+uv run python -m document_store.ingest.review_cli reclassify --help
+```
+
+## Classification Review
+
+Documents that match no classification rule are assigned the class
+`unclassified` and routed `local_only`, so they are never sent to cloud
+services until reviewed.
+
+### Listing unclassified documents
+
+```bash
+uv run python -m document_store.ingest.review_cli list
+```
+
+Output shows each document's ID, current route, and title.
+
+### Reclassifying a document
+
+```bash
+uv run python -m document_store.ingest.review_cli reclassify <id> <class> --reason "<why>"
+```
+
+- `<class>` must be a named class, such as `correspondence`, `court_filing`,
+  or `other`. `unclassified` cannot be assigned manually.
+- `--reason` is required and recorded in the audit trail.
+
+### Risk acknowledgment
+
+| Change | Acknowledgment needed? |
+|--------|------------------------|
+| `unclassified` → any class | No |
+| Any class → a more restrictive route | No |
+| Any class → a less restrictive route (for example `in_camera` → `correspondence`) | **Yes**: add `--acknowledge-risk` |
+
+If acknowledgment is needed and not given, the command prints a warning and
+makes no change.
+
+### Effects of reclassification
+
+- The document's class and route change. Its title does not change.
+- The change is recorded in `document_class_change` and `document_route_change`.
+- A reclassified document keeps its class when the file is re-ingested. Safety
+  still applies: if a later copy of the file is more restrictive, the route
+  is raised, but the class is not changed.
+
 ## Verifying the Setup
 
 Run these inside the devcontainer terminal:

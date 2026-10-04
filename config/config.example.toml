@@ -27,3 +27,45 @@ embedding = "bge-m3"
 embedding_dimensions = 1024
 extraction = "qwen2.5:7b-instruct"
 generation = "qwen2.5:7b-instruct"
+
+[classification]
+# Rules are evaluated in order; the first match wins. Patterns are
+# gitignore-style globs matched against the path relative to originals/,
+# case-insensitive. Unmatched files receive default_doc_class.
+
+# Folder names in these rules must match the originals/ structure
+# described in README.md ("Originals Folder Structure").
+
+default_doc_class = "unclassified"
+
+
+[[classification.rules]]
+doc_class = "in_camera"
+pattern = "in_camera/**"
+
+[[classification.rules]]
+doc_class = "financial_statement"
+pattern = "**/bank_statement*"
+
+[[classification.rules]]
+doc_class = "receipt"
+pattern = "**/receipt*"
+
+[[classification.rules]]
+doc_class = "court_filing"
+pattern = "court_filings/**"
+
+[[classification.rules]]
+doc_class = "correspondence"
+pattern = "correspondence/**"
+
+[routing]
+# Every doc_class must have an entry. in_camera is always forced to
+# local_only regardless of what is configured here (see constants.py).
+unclassified = "local_only"
+in_camera = "local_only"
+financial_statement = "external"
+receipt = "standard"
+court_filing = "standard"
+correspondence = "standard"
+other = "standard"

@@ -1,11 +1,25 @@
 # Case Document Management System: Architecture
 
-**Status:** Draft v0.6
+**Status:** Draft v0.7
+
 **Scope:** Single-user, local-first system for managing, searching, and analysing documents and communications relating to an ongoing court case.
 
 **Changes from v0.3:** Added corpus sizing, hardware constraints, and model selection; introduced PaddleOCR as the primary OCR engine; added document routing for in camera material and bank statements; added tiered extraction to manage CPU-bound processing.
+
 **Changes from v0.4** Join tables added for message participants and event entities. Constraints, enumerations, and indexes are now defined. Review kinds and thread confidence are specified. Migration `0001_initial.sql` is the authoritative schema; this section describes it.
+
 **Changes from v0.5** Reflect implementation of vector tables for chunks as in `0002_fts.sql`
+
+**Changes from v0.6** Document expected folder structure for input documents
+
+**Changes from v0.7** Document route types and restrictions
+
+**Changes from v0.8** Document record creation (STORY-2.8) and the ingestion CLI (STORY-2.6) are implemented. This adds the `document_route_change` audit table, documents the title-follows-most-restrictive rule, and updates the ingestion pipeline description to match the implemented behaviour.
+
+**Changes from v0.9** `other` is split into `unclassified` (system default, needs review) and `other` (reviewed, fits no named category). Adds the classification review workflow (STORY-2.5): listing, reclassification, the placeholder rule, and the sticky-class rule.
+
+**Changes from v0.10**  Ingestion run logging (STORY-2.7) and the shared logging module (STORY-11.4) are implemented. This adds a logging design section, records the run audit in `processing_run`, and updates the file layout and the ingestion CLI description.
+
 ---
 
 ## 1. Purpose and Scope
@@ -323,13 +337,17 @@ erDiagram
 | `review_item` | Pending or decided machine suggestions | id, kind, payload, created_at, decided_at, decision | `kind` restricted; `decision` restricted |
 | `processing_run` | Audit record of pipeline runs | id, stage, model_id, parameters, started_at, finished_at | — |
 | `schema_migrations` | Applied migration versions | version, name, applied_at | Managed by the migration runner |
+| `document_route_change` | Audit trail for every change to a document's processing route | id, document_id, from_route, to_route, change_kind, is_downgrade, risk_acknowledged, reason, changed_at | `change_kind` is `automatic` or `manual`; `from_route`/`to_route` restricted to the routes in Section 7.3.1 |
 
-### 7.3 Enumerations
+> `document` carries a partial unique index, `idx_document_source_top_level`, on `source_file_id` where `parent_id IS NULL`. This guarantees exactly one top-level document per source file; attachments and email messages are children via `parent_id` and are not constrained by this index (EPIC-5).
+
+## 7.3 Enumerations
 
 | Field | Allowed Values |
 |-------|----------------|
-| `document.doc_class` | `correspondence`, `court_filing`, `in_camera`, `financial_statement`, `receipt`, `other` |
-| `document.processing_route` | `standard`, `local_only`, `index_only`, `external` |
+| `document.doc_class` | `correspondence`, `court_filing`, `in_camera`, `financial_statement`, `receipt`, `other`, `unclassified` |
+| `document.processing_route` | `local_only`, `index_only`, `external`, `standard` (in order of restrictiveness; see below) |
+| `document_route_change.change_kind` | `automatic`, `manual` |
 | `entity.entity_type` | `person`, `organisation`, `place`, `issue` |
 | `message_participant.role` | `from`, `to`, `cc` |
 | `event.date_precision` | `exact`, `month`, `year`, `approximate`, `unknown` |
@@ -338,6 +356,39 @@ erDiagram
 | `email_message.thread_confidence` | `high`, `low` |
 | `review_item.kind` | `entity_mention`, `event`, `alias`, `relationship`, `classification`, `ocr` |
 | `review_item.decision` | `confirmed`, `edited`, `rejected` (or null while pending) |
+
+### 7.3.1 Route Restrictiveness
+
+Processing routes are ranked by restrictiveness, most restrictive first:
+
+| Rank | Route | Meaning |
+|------|-------|---------|
+| 3 | `local_only` | Processed locally only; never sent to cloud services |
+| 2 | `index_only` | Registered and searchable by metadata; not chunked or embedded |
+| 1 | `external` | Handled by another tool; not chunked or embedded |
+| 0 | `standard` | Processed normally; cloud services permitted if enabled |
+
+**Rules:**
+
+- **Source of truth.** The ranking is defined in code (`ROUTE_RESTRICTIVENESS` in `constants.py`). The set of valid routes is derived from it. It is not configurable, because it encodes the safety meaning of each route.
+- **Duplicate content.** Where identical content is registered at several locations, the document takes the most restrictive route across them.
+- **Automatic changes never downgrade.** Ingestion may only move a document to a more restrictive route.
+- **Manual downgrades require acknowledgment.** A manual change to a less restrictive route requires explicit acknowledgment of the risk and is recorded in `document_route_change`.
+- **Schema consistency.** The `CHECK` constraints on `document.processing_route` and `document_route_change` must list the same routes as the code. Tests in `tests/test_route_consistency.py` enforce this.
+
+### 7.3.2 Document Classes
+
+| Class | Meaning | Set by | Default route |
+|-------|---------|--------|---------------|
+| `unclassified` | No classification rule matched; awaiting review | System | `local_only` |
+| `other` | Reviewed and deliberately assigned; fits no named category | Reviewer | `standard` |
+| `correspondence`, `court_filing`, `in_camera`, `financial_statement`, `receipt` | Named categories | System (rules) or reviewer | Per `[routing]` config |
+
+**Rules:**
+
+- `unclassified` is the system default. It is never a valid target for a manual reclassification.
+- `other` is a reviewed decision. Documents stay in `other` until a reviewer changes them, and they do not appear in the unclassified review list.
+- The default route for `unclassified` is `local_only`, so unreviewed material is never cloud-eligible.
 
 ### 7.4 Design Notes
 
@@ -352,6 +403,16 @@ erDiagram
 - **Vector table naming.** The embedding model identifier is slugified and combined with the vector dimension to form the table name (vector_table_name()). This replaces the single-table-with-model_id-column design from v0.5, because sqlite-vec's vec0 tables are fixed-dimension and do not support a discriminator column cleanly.
 - **No foreign key from vector tables to `chunk`**. Virtual tables cannot carry foreign keys. Deleting a chunk does not automatically remove its vectors; cleanup is an application responsibility, to be implemented alongside re-embedding (EPIC-4).
 - **FTS5 sync.** Triggers on chunk keep chunk_fts current, including on cascade deletes from document or source file removal.
+- **Document creation is idempotent per source file.** Re-ingesting a file updates its existing document rather than creating a duplicate, enforced by `idx_document_source_top_level`.
+- **Duplicate content takes the most restrictive route.** Where identical content exists at several locations, the document's route is the most restrictive across all registrations seen so far (Section 7.3.1). Automatic ingestion only ever upgrades a document's route; it never downgrades one.
+- **Title and class follow the most restrictive location.** When an automatic upgrade occurs, `doc_class` and `title` are replaced with the values from the registration that caused the upgrade. This keeps the displayed title and class consistent with the document's most restrictive known location, independent of the order in which files are ingested. A location that would downgrade the route leaves the title and class unchanged.
+- **Manual route changes are separate from automatic ones.** A manual change (`change_route()`) can move a document to any route, including a downgrade, but a downgrade requires `risk_acknowledged=True` and is always recorded with `change_kind = 'manual'`. A manual change does not alter `doc_class` or `title`; only automatic upgrades do. If manual reclassification is added (STORY-2.5), it should apply the same title and class rule as automatic upgrades, so the two paths stay consistent.
+- **Every route change is audited**, whether automatic or manual, in `document_route_change`, including the reason and whether a downgrade's risk was acknowledged.
+- **Manual reclassification** (`reclassify()`) changes `doc_class` and route, leaves `title` unchanged, and is audited in `document_class_change` and `document_route_change`. A manual change does not use the title from any location, because a reviewer's decision has no source path.
+- **Placeholder transitions.** Moving a document from `unclassified` to any other class does not require a risk acknowledgment, even when the route becomes less restrictive. The `unclassified` route is a conservative placeholder, not a decision to protect the content. The transition is still audited, with `is_downgrade = 1` and `risk_acknowledged = 0`, and the reason records that it came from `unclassified`.
+- **All other downgrades require acknowledgment.** For example, `in_camera` → `correspondence` requires `risk_acknowledged=True`.
+- **Sticky classification.** Once a document has a manual class decision (a row in `document_class_change`), automatic ingestion may still upgrade its route for safety, but it does not change `doc_class` or `title`.
+- **`other` cannot be downgraded.** `standard` is the least restrictive route, so reclassifying a document from `other` can only keep or raise its route.
 
 ---
 
@@ -372,11 +433,58 @@ flowchart TD
     F --> G
 ```
 
+Routing is validated at startup: every doc_class must have a configured route, and in_camera is forced to local_only even if configured otherwise, with a warning logged.
+
 **Classification rules:**
 
 - **Bank statements** are identified by document class (assigned by filename pattern, folder, or user selection). They are registered for traceability and are excluded from chunking, embedding, and LLM extraction. Where useful, an `external_record` links to the output of the separate categorisation tool.
 - **In camera material** is always processed locally. Cloud processing is disabled for this class regardless of global settings.
 - **Unclassified documents** default to the most restrictive route until classified.
+
+### Classification Convention
+
+Document classes are assigned from each file's path relative to the `originals/` root. Rules are defined in `config.toml` under `[classification]`, evaluated in order, with the first match winning.
+
+| Folder or pattern | Class | Route |
+|-------------------|-------|-------|
+| `in_camera/**` | `in_camera` | `local_only` |
+| `**/bank_statement*` | `financial_statement` | `external` |
+| `**/receipt*` | `receipt` | `standard` |
+| `court_filings/**` | `court_filing` | `standard` |
+| `correspondence/**` | `correspondence` | `standard` |
+| (no match) | `unclassified` | `local_only` |
+
+**Dependency on folder structure:** classification is only as reliable as the folder layout. The system does not infer class from document content. Documents placed outside the expected folders fall to `other` and route to `local_only`, which is a safe default but may not reflect their actual nature. STORY-2.5 provides a review path for these.
+
+**Matching rules:**
+
+- Patterns are gitignore-style globs (`**`, `*`) matched against the relative path
+- Matching is case-insensitive; patterns should be written in lowercase
+- Rule order matters: more specific rules precede general ones
+
+### 8.1a Classification Review
+
+Files that match no classification rule are assigned `unclassified` at ingestion, with the most restrictive route (`local_only`) as a safe default. Review surfaces these documents and lets a reviewer assign a definite class.
+
+```mermaid
+flowchart TD
+    A[List unclassified documents] --> B{Reviewer decision}
+    B -- Fits a named class --> C[Reclassify to that class]
+    B -- Fits no named class --> D[Reclassify to 'other']
+    C --> E{New route more restrictive?}
+    D --> E
+    E -- Yes or placeholder transition --> F[Apply: update class, route, audit]
+    E -- No, and not a placeholder --> G[Require risk acknowledgment]
+    G -- Acknowledged --> F
+    G -- Not acknowledged --> H[Reject: no change]
+```
+
+**Rules:**
+
+- A document cannot be manually reclassified to `unclassified`.
+- A downgrade from any class other than `unclassified` requires explicit acknowledgment of the risk (`--acknowledge-risk` on the CLI).
+- A reason is required for every reclassification and is stored in the audit trail.
+- Reclassification is available via `python -m document_store.ingest.review_cli`, with `list` and `reclassify` subcommands.
 
 ### 8.2 Ingestion Pipeline
 
@@ -401,7 +509,21 @@ flowchart TD
     E3 --> H
     E4 --> H
     H --> I[Create document record]
-    I --> J[Structure-aware chunking]
+    I --> S[File added]
+    S[File added] --> T{Already registered?<br/>SHA-256 match}
+    T -- Yes --> U[Record new location if not already known]
+    T -- No --> V[Register source_file and location]
+    U --> W[Classify path: doc_class]
+    V --> W
+    W --> Y[Determine processing_route from doc_class]
+    Y --> Z{Document already exists<br/>for this source_file?}
+    Z -- No --> AA[Create document:<br/>title, doc_class, route]
+    Z -- Yes --> AB{Incoming route more restrictive<br/>than current?}
+    AB -- No --> AC[No change]
+    AB -- Yes --> AD[Upgrade route, doc_class, and title;<br/>record automatic audit entry]
+    AA --> J[Structure-aware chunking]
+    AC --> J
+    AD --> J
     J --> K[Embed chunks via Ollama]
     K --> L[Update FTS5 and sqlite-vec]
     L --> M{Extraction tier applies?}
@@ -410,6 +532,33 @@ flowchart TD
     N --> P
     X --> P
 ```
+
+**Notes:**
+
+- Classification requires the file to be located beneath the configured originals root; a path outside it cannot be classified and is rejected before registration proceeds.
+- Per-file failures (I/O errors, database errors) are caught and logged individually; a single failing file does not stop the rest of the run.
+- Chunking, embedding, and extraction are not yet wired into this pipeline; they begin in EPIC-4. `external` and `index_only` routed documents are expected to bypass these steps entirely once implemented.
+
+### 8.2.1 Ingestion CLI
+
+Ingestion is run via `python -m document_store.ingest [path]`, which:
+
+1. Configures console logging and loads configuration, failing fast on misconfiguration.
+2. Validates that the target path is inside the originals root.
+3. Opens a per-run log file in `logs/`.
+4. Records the run in `processing_run` (stage `ingest`), with the root and log file path in `parameters`.
+5. Runs the pipeline (Section 8.2) over every supported file beneath the path.
+6. Records the run summary in `processing_run.parameters` and sets `finished_at`.
+7. Prints counts of documents created, existing, and upgraded, plus skipped and failed files.
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| 0 | Run completed; no file failed |
+| 1 | Run completed; one or more files failed |
+| 2 | Configuration or path error; no processing performed |
+| 3 | Run crashed; `processing_run.finished_at` remains unset |
 
 ### 8.3 OCR Flow
 
@@ -649,6 +798,59 @@ stateDiagram-v2
     Confirmed --> [*]
 ```
 
+### 8.15 Run Audit
+
+Every processing run is recorded in `processing_run`:
+
+| Field | Content |
+|-------|---------|
+| `stage` | Name of the stage (e.g. `ingest`; later `extract`, `embed`, `extract_entities`) |
+| `model_id` | Model used, where applicable |
+| `parameters` | JSON: run inputs, plus a `summary` object once the run completes |
+| `started_at` | Set when the run begins |
+| `finished_at` | Set when the run completes; `NULL` indicates an incomplete or crashed run |
+
+**Rules:**
+
+- A run with `finished_at` unset is an incomplete run. It is never treated as a success.
+- Summaries contain counts and file names only, never document text.
+- Each run produces its own record, so repeated runs are individually traceable.
+
+### 8.16 Logging
+
+Logging is provided by a shared module, `document_store.logs`, used by all components.
+
+```mermaid
+flowchart LR
+    subgraph Modules
+        M1[ingest.pipeline]
+        M2[ingest.register]
+        M3[future stages]
+    end
+    M1 --> L[logging.getLogger&#40;__name__&#41;]
+    M2 --> L
+    M3 --> L
+    L --> C[Console handler<br/>text, INFO and above]
+    L --> F[Run log file<br/>JSON lines, INFO and above]
+    F --> D[(logs/&lt;stage&gt;-&lt;timestamp&gt;.log)]
+```
+
+| Output | Format | Scope | Purpose |
+|--------|--------|-------|---------|
+| Console | Plain text: time, level, logger, message | Entry point lifetime | Human review during a run |
+| Run log file | JSON lines: `time`, `level`, `logger`, `message`, optional `exc_info` | One file per run, in `logs/` | Machine-readable audit and filtering |
+
+**Functions:**
+
+| Function | Purpose |
+|----------|---------|
+| `configure_console()` | Attaches one console handler to the root logger; safe to call repeatedly |
+| `run_log_file(logs_dir, name, stamp)` | Context manager: writes JSON lines to `logs/<name>-<stamp>.log` for the duration of a run, then removes its handler and restores the root level |
+
+**Privacy rule:** log records contain file names, counts, identifiers, and timings. They never contain document text, quotations, or extracted content. This rule is enforced by a test that runs the ingestion CLI against fixture documents and asserts that fixture text does not appear in the log.
+
+**Level handling:** the root logger level is set for the duration of a run and restored afterwards, so logging does not depend on whether another library or test harness configured logging first.
+
 ---
 
 ## 9. Feature Views
@@ -738,6 +940,7 @@ flowchart TB
 | `config.toml` | Model names, chunk sizes, routing rules, gateway URL, paths | Yes |
 | `.env` | `LLM_GATEWAY_KEY` and other secrets | Yes, stored separately from project backup |
 | E: `models/` | Ollama model files (managed by the gateway stack) | Not required (re-downloadable) |
+| `logs/` | Per-run log files, `<stage>-<timestamp>.log`, JSON lines | Optional |
 
 ### 10.2 Configuration and Secrets
 
@@ -776,6 +979,23 @@ sequenceDiagram
 
 The startup check in the devcontainer confirms that both health and embedding endpoints are reachable before any processing begins.
 
+### 10.5 Originals Folder Convention
+
+The `originals/` folder is organised by document class. The structure below is required for the default classification rules to work as intended.
+
+```
+originals/
+├── in_camera/            # in camera material (local processing only)
+├── court_filings/        # filed or served court documents
+├── correspondence/       # letters and other correspondence
+└── (other folders)      # any other material; classified as "other"
+```
+
+Bank statements and receipts are matched by filename pattern (`bank_statement*`, `receipt*`) and may sit in any folder beneath `originals/`.
+
+Email (MBOX) imports are handled as a separate ingestion path (EPIC-5) and are not subject to this folder convention; their classification is assigned at import.
+
+**Rationale:** folder-based classification is simple to inspect and to correct manually, and it keeps the classification decision visible in the filesystem. Changing rules requires editing `config.toml`, not code.
 
 ---
 
@@ -793,6 +1013,8 @@ The startup check in the devcontainer confirms that both health and embedding en
 | Over-reliance on machine output | Review queue; citations on every answer; confirmed and proposed states distinguished |
 | Disk encryption | Full-disk encryption on the internal drive; external drive encrypted if it holds case data |
 | Court restrictions on in camera material | Confirm the applicable restrictions before ingestion; storage location and access to be reviewed accordingly |
+| Document content leaking into logs | Logging rule (Section 8.16); test asserting fixture text is absent from the run log |
+| Incomplete runs mistaken for successful ones | `processing_run.finished_at` unset until completion; exit code 3 for crashes |
 
 ---
 
@@ -872,3 +1094,8 @@ gantt
 | v0.3 | 7 | Initial data model |
 | v0.4 | 5, 10 | Gateway integration |
 | v0.5 | 7 | Added `message_participant`, `event_entity`, `source_file_location`, `schema_migrations`; defined enumerations and constraints; specified `review_item.kind` values and `email_message.thread_confidence` |
+| v0.7 | 8.1, 10.5 | Documented classification convention and originals folder structure |
+| v0.8 | 7.3, 7.3.1 | Route restrictiveness defined in code; enumerations listed with rules for duplicate handling and downgrades |
+| v0.9 | 7.2, 7.4, 8.2 | Added `document_route_change` table and unique index note; documented title/class-follows-most-restrictive rule; updated ingestion pipeline diagram and added CLI description |
+| v0.10 | 7.3, 7.3.2, 7.4, 8.1 | Split `other` into `unclassified` (system default) and `other` (reviewed); documented placeholder transition and sticky classification rules |
+| v0.11 | 8.2.1, 8.15, 8.16, 10.1, 11 | Run audit in `processing_run`; exit codes; shared logging module with text console and JSON-line run log; privacy rule and its enforcement |

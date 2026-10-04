@@ -172,10 +172,12 @@ flowchart LR
 | STORY-2.1 | File registration with SHA-256 | P0 | S | STORY-1.3 |
 | STORY-2.2 | Duplicate detection | P0 | S | STORY-2.1 |
 | STORY-2.3 | Document classification rules | P0 | M | STORY-1.2, STORY-2.1 |
+| STORY-2.3a | Document the originals folder convention (architecture and README) | P1 | S | |
 | STORY-2.4 | Routing engine | P0 | M | STORY-2.3 |
 | STORY-2.5 | Classification review for unclassified documents | P1 | S | STORY-2.4 |
 | STORY-2.6 | Ingestion CLI | P1 | S | STORY-2.1 to STORY-2.4 |
 | STORY-2.7 | Ingestion run log | P2 | S | STORY-2.6 |
+| STORY-2.8 | Document record creation (route-aware, idempotent) | P0 | M | STORY-2.1, STORY-2.4 |
 
 **STORY-2.1: File registration with SHA-256**
 
@@ -184,9 +186,9 @@ flowchart LR
 - Creates a `source_file` record; does not copy or modify the original
 
 *Acceptance criteria:*
-- [ ] Re-registering an unchanged file creates no new record
-- [ ] Original file hash is unchanged after registration
-- [ ] Files with unsupported types are logged and skipped
+- [x] Re-registering an unchanged file creates no new record
+- [x] Original file hash is unchanged after registration
+- [x] Files with unsupported types are logged and skipped
 
 **STORY-2.2: Duplicate detection**
 
@@ -194,8 +196,8 @@ flowchart LR
 - Duplicate paths are recorded as additional locations
 
 *Acceptance criteria:*
-- [ ] Two identical files in different folders produce one `source_file` and two location records
-- [ ] Duplicate report can be generated
+- [x] Two identical files in different folders produce one `source_file` and two location records
+- [x] Duplicate report can be generated
 
 **STORY-2.3: Document classification rules**
 
@@ -215,10 +217,10 @@ flowchart LR
 - Cloud eligibility is determined solely by route
 
 *Acceptance criteria:*
-- [ ] `in_camera` always routes to `local_only`
-- [ ] `financial_statement` routes to `external`
-- [ ] Unclassified documents route to `local_only`
-- [ ] A unit test covers every class-to-route mapping
+- [x] `in_camera` always routes to `local_only`
+- [x] `financial_statement` routes to `external`
+- [x] Unclassified documents route to `local_only`
+- [x] A unit test covers every class-to-route mapping
 
 **STORY-2.5: Classification review for unclassified documents**
 
@@ -226,8 +228,9 @@ flowchart LR
 - User can assign a class; assignment is recorded
 
 *Acceptance criteria:*
-- [ ] Unclassified documents appear in the list
-- [ ] Reclassification updates route and is logged
+- [x] Unclassified documents appear in the list
+- [x] Reclassification updates route and is logged
+- [x] `unclassified` default class with `local_only` status
 
 **STORY-2.6: Ingestion CLI**
 
@@ -235,8 +238,8 @@ flowchart LR
 - Reports counts: new, duplicate, skipped, routed by class
 
 *Acceptance criteria:*
-- [ ] Command runs on a folder of fixtures and prints a summary
-- [ ] Exit code non-zero on fatal error
+- [x] Command runs on a folder of fixtures and prints a summary
+- [x] Exit code non-zero on fatal error
 
 **STORY-2.7: Ingestion run log**
 
@@ -244,7 +247,26 @@ flowchart LR
 - Log file in `logs/`
 
 *Acceptance criteria:*
-- [ ] Run records start and end time, counts, and parameters
+- [x] Run records start and end time, counts, and parameters
+
+**STORY-2.8: Document record creation**
+
+*Acceptance criteria:*
+
+- [x] Registering a file with a supported type creates exactly one top-level `document` row for its `source_file`
+- [x] Re-running creates no duplicate documents
+- [x] A file present at multiple paths takes the most restrictive route across all locations, and the document row is updated if a later location is more restrictive
+- [ ] `financial_statement` documents create a `document` row and an `external_record` row, and no chunks
+- [x] `doc_class` and `processing_route` are stored on the document
+- [x] The document row's `title` defaults to the file name
+
+*Schema change required:* a partial unique index so one top-level document exists per source file:
+
+```sql
+CREATE UNIQUE INDEX idx_document_source_top_level
+    ON document(source_file_id)
+    WHERE parent_id IS NULL;
+```
 
 ### EPIC-3: Text Extraction and OCR
 
@@ -941,9 +963,12 @@ flowchart LR
 **STORY-11.4: Logging**
 
 - Structured logs with levels; no document text logged at INFO or above
+- Shared logging module (logs.py)
+
 
 *Acceptance criteria:*
-- [ ] Log output contains no document text at INFO level
+- [x] Log output contains no document text at INFO level
+- [x] Logs persist in structured searchable format
 
 **STORY-11.5: Encryption guidance**
 

@@ -50,6 +50,8 @@ class Settings:
     chunk_max_chars: int
     chunk_overlap_chars: int
     ocr_confidence_threshold: float
+    classification: ClassificationConfig
+    routing: RoutingConfig
 
 
 def load_settings(path: Path = DEFAULT_CONFIG_PATH) -> Settings:
@@ -74,6 +76,7 @@ def load_settings(path: Path = DEFAULT_CONFIG_PATH) -> Settings:
         models_raw = raw["models"]
         chunking_raw = raw["chunking"]
         ocr_raw = raw["ocr"]
+        classification_raw = raw["classification"]
     except KeyError as exc:
         raise ConfigError(f"Missing configuration section: {exc.args[0]}") from exc
 
@@ -82,6 +85,20 @@ def load_settings(path: Path = DEFAULT_CONFIG_PATH) -> Settings:
         raise ConfigError("LLM_GATEWAY_KEY environment variable is not set")
 
     project_dir = Path(paths_raw["project_dir"]).resolve()
+
+    classification = ClassificationConfig(
+        rules=tuple(
+            ClassificationRule(doc_class=r["doc_class"], pattern=r["pattern"])
+            for r in classification_raw.get("rules", [])
+        ),
+        default_doc_class=classification_raw["default_doc_class"],
+    )
+
+    try:
+        routing_raw = raw['routing']
+    except KeyError as exc:
+        raise ConfigError(f"Missing configuration section: {exc.args[0]}") from exc
+    routing=RoutingConfig(mapping=dict(routing_raw))
 
     return Settings(
         paths=Paths(
@@ -105,4 +122,23 @@ def load_settings(path: Path = DEFAULT_CONFIG_PATH) -> Settings:
         chunk_max_chars=int(chunking_raw["max_chars"]),
         chunk_overlap_chars=int(chunking_raw["overlap_chars"]),
         ocr_confidence_threshold=float(ocr_raw["confidence_threshold"]),
+        classification=classification,
+        routing=routing,
     )
+
+
+@dataclass(frozen=True)
+class ClassificationRule:
+    doc_class: str
+    pattern: str
+
+
+@dataclass(frozen=True)
+class ClassificationConfig:
+    rules: tuple[ClassificationRule, ...]
+    default_doc_class: str
+
+
+@dataclass(frozen=True)
+class RoutingConfig:
+    mapping: dict[str, str]

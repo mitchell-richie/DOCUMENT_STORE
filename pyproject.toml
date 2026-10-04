@@ -13,6 +13,7 @@ dependencies = [
     "paddleocr==3.7.0",
     "paddlepaddle>=3.3.1",
     "sqlite-vec>=0.1",
+    "pathspec>=0.12",
 ]
 
 [dependency-groups]
@@ -37,4 +38,5 @@ src = ["src", "tests"]
 testpaths = ["tests"]
 markers = [
     "ocr: requires PaddleOCR models; slow, downloads on first run",
+    "integration: end-to-end test using the CLI, config file, and database",
 ]
