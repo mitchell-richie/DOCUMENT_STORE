@@ -10,7 +10,7 @@ from document_store.constants import DOC_CLASSES
 from document_store.ingest.documents import _apply_route_change
 from document_store.ingest.routing import Router
 
-UNCLASSIFIED = "other"
+UNCLASSIFIED = "unclassified"
 
 
 @dataclass(frozen=True)
@@ -58,6 +58,8 @@ def reclassify(
     """
     if new_class not in DOC_CLASSES:
         raise ValueError(f"Unrecognised doc_class {new_class!r}")
+    if new_class == UNCLASSIFIED:
+        raise ValueError("cannot manually set a document to unclassified")
     if not reason.strip():
         raise ValueError("a reason is required for reclassification")
 
@@ -76,15 +78,19 @@ def reclassify(
         if old_class == new_class and current_route == new_route:
             return False
 
+        placeholder = old_class == UNCLASSIFIED
+
         if new_route != current_route:
+            origin = "from unclassified " if placeholder else ""
             _apply_route_change(
                 conn,
                 document_id,
                 current_route,
                 new_route,
-                f"reclassified to {new_class}: {reason}",
+                f"reclassified {origin}to {new_class}: {reason}",
                 risk_acknowledged,
                 timestamp,
+                placeholder_transition=placeholder,
             )
 
         if old_class != new_class:

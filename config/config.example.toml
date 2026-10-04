@@ -36,7 +36,7 @@ generation = "qwen2.5:7b-instruct"
 # Folder names in these rules must match the originals/ structure
 # described in README.md ("Originals Folder Structure").
 
-default_doc_class = "other"
+default_doc_class = "unclassified"
 
 
 [[classification.rules]]
@@ -62,9 +62,10 @@ pattern = "correspondence/**"
 [routing]
 # Every doc_class must have an entry. in_camera is always forced to
 # local_only regardless of what is configured here (see constants.py).
+unclassified = "local_only"
 in_camera = "local_only"
 financial_statement = "external"
 receipt = "standard"
 court_filing = "standard"
 correspondence = "standard"
-other = "local_only"
+other = "standard"

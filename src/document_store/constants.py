@@ -8,6 +8,7 @@ DOC_CLASSES = frozenset(
         "financial_statement",
         "receipt",
         "other",
+        "unclassified",
     }
 )
 

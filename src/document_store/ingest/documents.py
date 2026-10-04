@@ -128,14 +128,19 @@ def _apply_route_change(
     reason: str,
     risk_acknowledged: bool,
     timestamp: str,
+    placeholder_transition: bool = False,
 ) -> None:
     """Change a route and audit it. Caller owns the transaction.
 
+    A placeholder transition (leaving the unclassified default) may lower the
+    route without acknowledgment. It is still audited as a downgrade.
+
     Raises:
-        RiskAcknowledgementRequired: for a downgrade without acknowledgment.
+        RiskAcknowledgementRequired: for a downgrade without acknowledgment,
+            unless it is a placeholder transition.
     """
     is_downgrade = ROUTE_RESTRICTIVENESS[new_route] < ROUTE_RESTRICTIVENESS[current]
-    if is_downgrade and not risk_acknowledged:
+    if is_downgrade and not risk_acknowledged and not placeholder_transition:
         raise RiskAcknowledgementRequired(DOWNGRADE_WARNING)
 
     conn.execute(
