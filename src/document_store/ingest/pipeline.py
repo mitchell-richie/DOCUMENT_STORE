@@ -6,6 +6,7 @@ import logging
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from document_store.constants import PROCESSING_ROUTES  # noqa: F401 (route vocabulary)
 from document_store.ingest.classify import Classifier, relative_to_originals
@@ -25,6 +26,16 @@ class IngestSummary:
     routes_upgraded: int = 0
     skipped: list[Path] = field(default_factory=list)
     errors: list[tuple[Path, str]] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Counts and failed file names, for the run log. No document content."""
+        return {
+            "documents_created": self.documents_created,
+            "documents_existing": self.documents_existing,
+            "routes_upgraded": self.routes_upgraded,
+            "files_skipped": len(self.skipped),
+            "files_failed": [path.name for path, _ in self.errors],
+        }    
 
 
 def check_within_originals(originals_root: Path, target: Path) -> None:
@@ -82,3 +93,4 @@ def ingest_folder(
         else:
             summary.documents_existing += 1
     return summary
+
