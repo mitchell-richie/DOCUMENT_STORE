@@ -5,8 +5,6 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from collections.abc import Generator
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -17,36 +15,12 @@ from document_store.ingest.classify import build_classifier
 from document_store.ingest.pipeline import check_within_originals, ingest_folder
 from document_store.ingest.routing import build_router
 from document_store.ingest.runlog import finish_run, start_run
+from document_store.logs import configure_console, run_log_file
 
 EXIT_OK = 0
 EXIT_FILE_ERRORS = 1
 EXIT_CONFIG_ERROR = 2
 EXIT_UNEXPECTED = 3
-
-LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
-
-
-@contextmanager
-def run_log_file(logs_dir: Path, stamp: str) -> Generator[Path]:
-    """Write INFO and above for the duration of a run to logs/ingest-<stamp>.log.
-    The root logger level is set for the run and restored afterwards, so the
-    log does not depend on how logging was configured beforehand.
-    """
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    path = logs_dir / f"ingest-{stamp}.log"
-    handler = logging.FileHandler(path, encoding="utf-8")
-    handler.setLevel(logging.INFO)
-    handler.setFormatter(logging.Formatter(LOG_FORMAT))
-    root = logging.getLogger()
-    previous_level = root.level
-    root.setLevel(logging.INFO)
-    root.addHandler(handler)
-    try:
-        yield path
-    finally:
-        root.removeHandler(handler)
-        handler.close()
-        root.setLevel(previous_level)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -66,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+    configure_console()
     log = logging.getLogger(__name__)
 
     try:
@@ -89,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_CONFIG_ERROR
 
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    with run_log_file(settings.paths.logs, stamp) as log_path:
+    with run_log_file(settings.paths.logs, "ingest", stamp) as log_path:
         conn = connect(settings.paths.database)
         try:
             migrate(conn)

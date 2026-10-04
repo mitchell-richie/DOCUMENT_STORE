@@ -39,9 +39,11 @@ def test_log_file_is_written_without_document_text(project: Path) -> None:
     (run,) = _runs(project)
     log_path = Path(json.loads(run["parameters"])["log_file"])
     assert log_path.parent == project / "logs"
-    content = log_path.read_text(encoding="utf-8")
-    assert "skipping unsupported file: notes.txt" in content
-    assert "Synthetic native page" not in content  # no document text in logs
+
+    records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    messages = [r["message"] for r in records]
+    assert any("skipping unsupported file: notes.txt" in m for m in messages)
+    assert all("Synthetic native page" not in m for m in messages)
 
 
 def test_crashed_run_leaves_finished_at_unset(
