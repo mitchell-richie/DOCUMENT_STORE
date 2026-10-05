@@ -1,5 +1,6 @@
 """Integration test: PaddleOCR reads a rendered sample image."""
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,7 @@ import pytest
 from document_store.extract.ocr import OcrCache, ocr_pdf_pages
 from document_store.ocr.check import run_check
 from document_store.ocr.paddle import create_engine
+from document_store.ocr.tesseract import tesseract_ocr
 
 pytestmark = pytest.mark.ocr
 
@@ -33,3 +35,9 @@ def test_scanned_pdf_ocr_reads_reference_and_caches(tmp_path: Path, fixtures_dir
     assert first[0].mean_confidence > 0
     assert second[0].from_cache is True
     assert cache_file.stat().st_mtime_ns == mtime
+
+
+@pytest.mark.skipif(shutil.which("tesseract") is None, reason="tesseract binary not installed")
+def test_tesseract_reads_receipt(fixtures_dir: Path) -> None:
+    result = tesseract_ocr(fixtures_dir / "receipt.png")
+    assert "12.50" in result.text

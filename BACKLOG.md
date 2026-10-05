@@ -308,9 +308,9 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - Results cached in `cache/` to avoid reprocessing
 
 *Acceptance criteria:*
-- [ ] Scanned fixture produces text with confidence
-- [ ] Re-running uses cache and does not re-run OCR
-- [ ] OCR output is stored per page
+- [x] Scanned fixture produces text with confidence
+- [x] Re-running uses cache and does not re-run OCR
+- [x] OCR output is stored per page
 
 **STORY-3.4: Image pre-processing**
 
@@ -327,8 +327,8 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - The higher-confidence result is kept
 
 *Acceptance criteria:*
-- [ ] Fallback triggers on a low-confidence fixture
-- [ ] Fallback does not trigger on high-confidence fixtures
+- [x] Fallback triggers on a low-confidence fixture
+- [x] Fallback does not trigger on high-confidence fixtures
 
 **STORY-3.6: DOCX extraction**
 
