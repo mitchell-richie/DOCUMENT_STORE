@@ -20,6 +20,8 @@
 
 **Changes from v0.10**  Ingestion run logging (STORY-2.7) and the shared logging module (STORY-11.4) are implemented. This adds a logging design section, records the run audit in `processing_run`, and updates the file layout and the ingestion CLI description.
 
+**Changes from v 0.11** Documented all configuration keys, code-level settings, environment variables, and configuration principles
+
 ---
 
 ## 1. Purpose and Scope
@@ -944,15 +946,63 @@ flowchart TB
 
 ### 10.2 Configuration and Secrets
 
-| Setting | Location | Example | Notes |
-|---------|----------|---------|-------|
-| `LLM_GATEWAY_URL` | Container environment | `http://llm-gateway-api:8000` | Internal to `llm_net` |
-| `LLM_GATEWAY_KEY` | `.env` or host environment | (secret) | Never committed; never written to `config.toml` |
-| `LLM_CLIENT_NAME` | Container environment | `case-dms` | Used in gateway logs via `x-client-name` |
-| Embedding model | `config.toml` | `bge-m3` | Must appear in gateway `ALLOWED_EMBED_MODELS` |
-| Extraction model | `config.toml` | `qwen2.5:7b-instruct` | Must appear in gateway `ALLOWED_MODELS` |
-| Generation model | `config.toml` | `qwen2.5:7b-instruct` | Must appear in gateway `ALLOWED_MODELS` |
-| embedding_dimensions | `config.toml` | 1024 | |
+#### 10.2.1 Configuration File (`config/config.toml`)
+
+The configuration file is read at startup. It is local to each machine and excluded from version control; `config/config.example.toml` is the committed template.
+
+| Section | Key | Example | Purpose | Effect of Change |
+|---------|-----|---------|---------|------------------|
+| `[paths]` | `project_dir` | `"."` | Root for relative paths | Restart required |
+| `[paths]` | `database` | `"case.sqlite"` | SQLite database file | Restart required |
+| `[paths]` | `originals` | `"originals"` | Root of original documents; classification paths are relative to it | Restart required |
+| `[paths]` | `cache` | `"cache"` | Regenerable OCR output | Safe to delete |
+| `[paths]` | `logs` | `"logs"` | Per-run log files | Safe to delete |
+| `[gateway]` | `url` | `"http://llm-gateway-api:8000"` | LLM Gateway base URL | Restart required |
+| `[gateway]` | `client_name` | `"case-dms"` | Identifies this project in gateway logs | None |
+| `[models]` | `embedding` | `"bge-m3"` | Embedding model | Creates a new vector table (Section 7.2) |
+| `[models]` | `embedding_dimensions` | `1024` | Vector length for the embedding model | Creates a new vector table |
+| `[models]` | `extraction` | `"qwen2.5:7b-instruct"` | Entity and event extraction model | Recorded per processing run |
+| `[models]` | `generation` | `"qwen2.5:7b-instruct"` | Answer generation model | Recorded per processing run |
+| `[chunking]` | `max_chars` | `2000` | Maximum characters per chunk | Affects chunks created after change; re-chunk to apply |
+| `[chunking]` | `overlap_chars` | `200` | Overlap between split chunks | As above |
+| `[ocr]` | `confidence_threshold` | `0.6` | Mean OCR confidence below which a page is flagged for review | Applies to future flagging |
+| `[ocr]` | `min_text_chars` | `20` | Non-whitespace characters needed for a page to count as having a text layer | Affects future page routing |
+| `[ocr]` | `dpi` | `200` | Render resolution for OCR | Part of the OCR cache key; changes invalidate cached results |
+| `[classification]` | `default_doc_class` | `"unclassified"` | Class for files matching no rule | Applies to future ingestion |
+| `[[classification.rules]]` | `doc_class`, `pattern` | see Section 8.1 | Path-based classification rules, evaluated in order | Applies to future ingestion |
+| `[routing]` | one key per `doc_class` | `in_camera = "local_only"` | Route for each class; every class must have an entry | Applies to future ingestion; `in_camera` is enforced (below) |
+
+#### 10.2.2 Code-Level Settings
+
+These values are defined in code, not configuration, because they affect what the system guarantees. Changing them is a code change with review and tests.
+
+| Setting | Location | Purpose |
+|---------|----------|---------|
+| `ROUTE_RESTRICTIVENESS` | `constants.py` | Ranking of routes, used to resolve duplicates and block automatic downgrades (Section 7.3.1) |
+| `ENFORCED_ROUTES` | `constants.py` | Routes that cannot be overridden by config (`in_camera` → `local_only`) |
+| `DOC_CLASSES` | `constants.py` | Valid document classes (must match the schema) |
+| `PIPELINE_VERSION` | `extract/ocr.py` | Bumped when OCR output handling changes in code; part of the OCR cache key |
+| `DEFAULT_MIN_TEXT_CHARS`, `DEFAULT_DPI` | `extract/pdf.py`, `extract/ocr.py` | Fallback values when a caller does not supply one; config values take precedence |
+
+#### 10.2.3 Environment Variables
+
+| Variable | Source | Purpose |
+|----------|--------|---------|
+| `LLM_GATEWAY_KEY` | `.env` or host environment | Authenticates requests to the LLM Gateway; never written to `config.toml` |
+| `OLLAMA_MODELS` | Gateway stack | Location of Ollama model files (E: drive) |
+
+#### 10.2.4 Secrets
+
+| Setting | Location | Notes |
+|---------|----------|-------|
+| `LLM_GATEWAY_KEY` | `.env` (excluded from version control) | Never committed; never stored in `config.toml` |
+
+#### 10.2.5 Configuration Principles
+
+- **Tunables belong in config:** thresholds, resolutions, model choices, and path-based rules that a user may reasonably vary.
+- **Safety invariants belong in code:** route ranking, enforced routes, and valid enumerations. They are not configurable, because a misconfiguration could weaken protection for in camera material.
+- **Config is validated at startup:** invalid classes, routes, or missing required keys produce a clear error before any processing begins.
+- **Cache-affecting settings are part of cache keys:** where a setting changes the output of a cached step (such as OCR DPI), it is included in the cache key, so stale results are not reused.
 
 ### 10.3 Storage Notes
 
@@ -1099,3 +1149,4 @@ gantt
 | v0.9 | 7.2, 7.4, 8.2 | Added `document_route_change` table and unique index note; documented title/class-follows-most-restrictive rule; updated ingestion pipeline diagram and added CLI description |
 | v0.10 | 7.3, 7.3.2, 7.4, 8.1 | Split `other` into `unclassified` (system default) and `other` (reviewed); documented placeholder transition and sticky classification rules |
 | v0.11 | 8.2.1, 8.15, 8.16, 10.1, 11 | Run audit in `processing_run`; exit codes; shared logging module with text console and JSON-line run log; privacy rule and its enforcement |
+| v0.12 | 10.2 | Documented all configuration keys, code-level settings, environment variables, and configuration principles |
