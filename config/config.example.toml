@@ -21,9 +21,10 @@ overlap_chars = 200
 
 [ocr]
 confidence_threshold = 0.6
-# A page counts as having a text layer if its non-whitespace text is at least
-# this many characters. Below this, an image-bearing page is sent to OCR.
 min_text_chars = 20
+# Resolution at which image-only pages are rendered for OCR. Changing this
+# invalidates cached OCR results for the new setting.
+dpi = 200
 
 [models]
 embedding = "bge-m3"
