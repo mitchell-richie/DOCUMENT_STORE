@@ -58,3 +58,55 @@ def test_unreadable_file_raises(tmp_path: Path) -> None:
 
     with pytest.raises(ExtractionError, match="cannot open"):
         extract_pdf(target)
+
+
+def test_scanned_pdf_needs_ocr(fixtures_dir: Path) -> None:
+    result = extract_pdf(fixtures_dir / "scanned.pdf")
+
+    assert result.pages_needing_ocr == [1]
+    assert result.pages[0].has_images is True
+
+
+def test_native_pdf_needs_no_ocr(fixtures_dir: Path) -> None:
+    result = extract_pdf(fixtures_dir / "native.pdf")
+
+    assert result.pages_needing_ocr == []
+
+
+def test_blank_page_is_not_sent_to_ocr(tmp_path: Path) -> None:
+    target = tmp_path / "blank.pdf"
+    doc = pymupdf.open()
+    doc.new_page()
+    doc.save(target)
+    doc.close()
+
+    result = extract_pdf(target)
+
+    assert result.pages[0].has_text_layer is False
+    assert result.pages[0].has_images is False
+    assert result.pages_needing_ocr == []
+    assert result.pages_without_text == [1]
+
+
+def test_scan_with_short_header_is_ocr_candidate_at_default_threshold(
+    tmp_path: Path, fixtures_dir: Path
+) -> None:
+    target = tmp_path / "scan_with_header.pdf"
+    with pymupdf.open(fixtures_dir / "scanned.pdf") as doc:
+        doc[0].insert_text((72, 20), "Page 1", fontsize=8)
+        doc.save(target)
+
+    result = extract_pdf(target)  # default 20 characters
+    assert result.pages_needing_ocr == [1]
+
+
+def test_short_text_counts_as_text_layer_at_low_threshold(
+    tmp_path: Path, fixtures_dir: Path
+) -> None:
+    target = tmp_path / "scan_with_header.pdf"
+    with pymupdf.open(fixtures_dir / "scanned.pdf") as doc:
+        doc[0].insert_text((72, 20), "Page 1", fontsize=8)
+        doc.save(target)
+
+    result = extract_pdf(target, min_text_chars=3)
+    assert result.pages_needing_ocr == []

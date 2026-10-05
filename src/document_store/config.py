@@ -50,6 +50,7 @@ class Settings:
     chunk_max_chars: int
     chunk_overlap_chars: int
     ocr_confidence_threshold: float
+    ocr_min_text_chars: int
     classification: ClassificationConfig
     routing: RoutingConfig
 
@@ -122,6 +123,7 @@ def load_settings(path: Path = DEFAULT_CONFIG_PATH) -> Settings:
         chunk_max_chars=int(chunking_raw["max_chars"]),
         chunk_overlap_chars=int(chunking_raw["overlap_chars"]),
         ocr_confidence_threshold=float(ocr_raw["confidence_threshold"]),
+        ocr_min_text_chars=int(ocr_raw["min_text_chars"]),
         classification=classification,
         routing=routing,
     )

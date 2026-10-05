@@ -297,8 +297,9 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - Threshold configurable
 
 *Acceptance criteria:*
-- [ ] Scanned fixture PDF identifies all pages as image-only
-- [ ] Native fixture PDF identifies none
+- [x] Scanned fixture PDF identifies all pages as image-only
+- [x] Native fixture PDF identifies none
+- [x] Character threshold for ocr requirement set in config and passed to extract_pdf()
 
 **STORY-3.3: PaddleOCR integration**
 
