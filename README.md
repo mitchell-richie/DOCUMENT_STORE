@@ -222,6 +222,64 @@ curl -s http://llm-gateway-api:8000/health   # expect: {"status": "ok"}
 If the gateway check fails, see `docs/troubleshooting.md` (network and DNS
 issues between the devcontainer and the gateway are the most common cause).
 
+## OCR Benchmark
+
+The OCR benchmark compares OCR engines on your own scans, so that the default
+OCR settings are chosen on evidence rather than assumption. It is a development
+tool; the application does not use it.
+
+### Data
+
+Benchmark data contains real case material, so it lives outside the repository
+(in `benchmark-data/`, which is excluded from version control, or in any folder
+you choose).
+
+```
+<dataset>/
+├── scan_001.png      # a scan image (.png, .jpg, .jpeg, .tif, .tiff)
+├── scan_001.txt      # its accurate transcript, same name
+├── scan_002.jpg
+├── scan_002.txt
+└── ...
+```
+
+- Each image needs a transcript with the same name and a `.txt` extension.
+  Images without a transcript are skipped, and the skipped names are reported.
+- Use 20 to 30 scans, including the low-quality ones the benchmark is meant
+  to assess.
+- PDF scans must be converted to one image per page first.
+- Transcripts should be accurate, including punctuation, because the comparison
+  is character-level.
+
+### Running
+
+```bash
+uv run python -m document_store.bench.ocr <dataset-folder>
+uv run python -m document_store.bench.ocr <dataset-folder> --engines paddleocr
+```
+
+The default engines are `paddleocr` and `tesseract`. Add `--engines` to compare
+a subset.
+
+### Results
+
+Each run writes two files into the dataset folder:
+
+| File | Contents |
+|------|----------|
+| `results.md` | Summary table per engine: mean and median character error rate (CER), mean confidence, seconds per item, and engine versions |
+| `results.json` | The same summaries, plus per-item results, for further analysis |
+
+**Reading the numbers:** CER is the edit distance between the transcript and
+the OCR output, divided by the transcript length. Lower is better. A CER of
+0.05 means about one character in twenty differs from the transcript.
+
+### Recording a Decision
+
+After a run, record the outcome (date, dataset size, CER per engine, engine
+versions, and the settings chosen) in your own notes, and update the default
+OCR settings in `config/config.toml` if the results justify a change.
+
 ## Project Layout
 
 ```

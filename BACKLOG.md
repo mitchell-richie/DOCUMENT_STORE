@@ -356,8 +356,8 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - Images with no meaningful text are flagged for vision description (deferred to EPIC-6 or later)
 
 *Acceptance criteria:*
-- [ ] Receipt fixture produces OCR text
-- [ ] Images with no text are flagged
+- [x] Receipt fixture produces OCR text
+- [x] Images with no text are flagged
 
 **STORY-3.9: Low-confidence flagging**
 
