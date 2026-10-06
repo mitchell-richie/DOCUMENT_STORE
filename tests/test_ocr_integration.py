@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from document_store.extract.image import extract_image
 from document_store.extract.ocr import OcrCache, ocr_pdf_pages
 from document_store.ocr.check import run_check
 from document_store.ocr.paddle import create_engine
@@ -41,3 +42,18 @@ def test_scanned_pdf_ocr_reads_reference_and_caches(tmp_path: Path, fixtures_dir
 def test_tesseract_reads_receipt(fixtures_dir: Path) -> None:
     result = tesseract_ocr(fixtures_dir / "receipt.png")
     assert "12.50" in result.text
+
+
+
+
+def test_receipt_image_is_read_end_to_end(tmp_path: Path, fixtures_dir: Path) -> None:
+    result = extract_image(
+        fixtures_dir / "receipt.png",
+        source_sha256="sha-receipt",
+        engine=create_engine(),
+        cache=OcrCache(tmp_path / "cache"),
+        fallback_threshold=0.6,
+    )
+
+    assert "12.50" in result.page.text
+    assert result.needs_vision is False    

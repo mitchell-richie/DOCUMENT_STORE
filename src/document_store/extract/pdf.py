@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pymupdf
 
-from document_store.extract.base import Extractor
+from document_store.extract.base import DEFAULT_MIN_TEXT_CHARS, Extractor
 from document_store.extract.errors import ExtractionError
 
 __all__ = [
@@ -23,8 +23,6 @@ __all__ = [
     "PdfExtractor",
     "extract_pdf",
 ]
-
-DEFAULT_MIN_TEXT_CHARS = 20
 
 
 @dataclass(frozen=True)

@@ -14,6 +14,8 @@ from typing import Any, ClassVar
 
 from document_store.extract.errors import ExtractionError
 
+DEFAULT_MIN_TEXT_CHARS = 20
+
 
 class Extractor[ResultT](ABC):
     format_name: ClassVar[str]
