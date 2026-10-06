@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from document_store.extract.ocr import OcrCache, ocr_image, ocr_pdf_pages, engine_tag
+from document_store.extract.ocr import OcrCache, engine_tag, ocr_image, ocr_pdf_pages
 
 
 class FakeEngine:

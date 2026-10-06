@@ -336,8 +336,8 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - Page numbers are approximated where Word does not store them; this is recorded
 
 *Acceptance criteria:*
-- [ ] DOCX fixture yields paragraphs and headings in order
-- [ ] Tables are extracted as text with row and column markers
+- [x] DOCX fixture yields paragraphs and headings in order
+- [x] Tables are extracted as text with row and column markers
 
 **STORY-3.7: OCR benchmark**
 

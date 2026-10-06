@@ -20,7 +20,9 @@
 
 **Changes from v0.10**  Ingestion run logging (STORY-2.7) and the shared logging module (STORY-11.4) are implemented. This adds a logging design section, records the run audit in `processing_run`, and updates the file layout and the ingestion CLI description.
 
-**Changes from v 0.11** Documented all configuration keys, code-level settings, environment variables, and configuration principles
+**Changes from v0.11** Documented all configuration keys, code-level settings, environment variables, and configuration principles
+
+**Changes from v0.12** Extraction and OCR components are implemented (STORY-3.1 to 3.6). This adds a section describing the extraction design, the extractor class structure, the block model, the OCR cache and fallback behaviour, and the package layout.
 
 ---
 
@@ -282,6 +284,169 @@ flowchart TB
 | **Timeline Service** | Produces ordered event lists from confirmed events and communication sequences |
 | **RAG Service** | Retrieves relevant chunks, builds a grounded prompt, and returns an answer with citations |
 | **Review Service** | Maintains the queue of machine-proposed items awaiting confirmation |
+
+## 6.2 Extraction Components
+
+### 6.2.1 Extractor Design
+
+Text extractors share one class hierarchy. The base class `Extractor` runs a fixed sequence for every format:
+
+1. **Open** the source. Library errors listed in `open_errors` are mapped to `ExtractionError`.
+2. **Check** the source for conditions that make it unusable (for example, encryption).
+3. **Read** the source and produce a format-specific result.
+4. **Close** the source, even if reading fails.
+
+Format-specific behaviour is supplied by subclasses. Every extractor therefore reports unreadable files the same way, and the pipeline needs to handle one error type.
+
+```mermaid
+classDiagram
+    class Extractor~ResultT~ {
+        <<abstract>>
+        +extract() ResultT
+        #_open()* Any
+        #_check(source)
+        #_read(source)* ResultT
+        #_close(source)
+    }
+    class PdfExtractor {
+        +min_text_chars: int
+        #_open() Document
+        #_check(source)
+        #_read(source) PdfExtraction
+        #_close(source)
+    }
+    class DocxExtractor {
+        #_open() Document
+        #_read(source) DocxExtraction
+    }
+    class PdfExtraction {
+        +pages: tuple~PageText~
+        +pages_needing_ocr
+    }
+    class DocxExtraction {
+        +blocks: tuple~Block~
+    }
+    class Block {
+        <<dataclass>>
+        +ordinal: int
+        +text: str
+    }
+    class Heading {
+        +level: int
+    }
+    class Paragraph
+    class TableRow {
+        +table_index: int
+        +row_index: int
+    }
+
+    Extractor <|-- PdfExtractor
+    Extractor <|-- DocxExtractor
+    PdfExtractor ..> PdfExtraction
+    DocxExtractor ..> DocxExtraction
+    DocxExtraction o-- Block
+    Block <|-- Heading
+    Block <|-- Paragraph
+    Block <|-- TableRow
+```
+
+### 6.2.2 Block Model
+
+Word documents are converted into typed blocks, each carrying only the fields that apply to it:
+
+| Block | Fields | Produced from |
+|-------|--------|---------------|
+| `Heading` | `ordinal`, `text`, `level` | Paragraphs with a `Heading N` style |
+| `Paragraph` | `ordinal`, `text` | Non-empty body paragraphs |
+| `TableRow` | `ordinal`, `text`, `table_index`, `row_index` | Non-empty table rows; cells joined with ` \| ` |
+
+Blocks are numbered in document order. Empty paragraphs and rows are skipped.
+
+**Design rule:** a field that only applies to some kinds of block belongs on a subclass, not on the base class. No block carries a `None` value for a field that should exist.
+
+### 6.2.3 Page Model (PDF)
+
+PDF extraction produces one `PageText` per page, numbered from 1:
+
+| Field | Meaning |
+|-------|---------|
+| `page_number` | 1-based page position |
+| `text` | Embedded text layer for the page |
+| `has_text_layer` | Non-whitespace text length is at least `min_text_chars` |
+| `has_images` | The page embeds at least one image |
+
+Derived lists:
+
+| Property | Contents |
+|----------|----------|
+| `pages_without_text` | Pages with no usable text layer (blank or image-only) |
+| `pages_needing_ocr` | Pages with no usable text layer but at least one image; blank pages are excluded |
+
+### 6.2.4 Page Numbers (Word)
+
+Word does not store page numbers for paragraphs; they depend on layout. Word blocks therefore carry **no page number**. Citations for Word documents use the block `ordinal` as the anchor. If page citations become necessary, a rendering step (for example, conversion to PDF) can be added without changing the extractor.
+
+---
+
+## 6.3 OCR Components (new)
+
+### 6.3.1 Engines
+
+| Engine | Role | Module |
+|--------|------|--------|
+| PaddleOCR (primary) | OCR of image-only PDF pages and image files | `ocr/paddle.py` |
+| Tesseract (fallback) | Used only when the primary result's mean confidence is below `confidence_threshold` | `ocr/tesseract.py` |
+
+### 6.3.2 OCR Flow for a Page or Image
+
+```mermaid
+flowchart TD
+    A[Image-only page or image file] --> B{Cached for source hash,<br/>page, and engine tag?}
+    B -- Yes --> Z[Return cached text, engine, and confidence]
+    B -- No --> C[Render to temporary PNG<br/>at configured DPI]
+    C --> D[PaddleOCR]
+    D --> E{Mean confidence ≥ threshold?}
+    E -- Yes --> F[Keep PaddleOCR result]
+    E -- No --> G[Tesseract fallback]
+    G --> H{Tesseract more confident?}
+    H -- Yes --> I[Use Tesseract result]
+    H -- No --> F
+    G -. unavailable or fails .-> F
+    F --> J[Store in cache with engine]
+    I --> J
+    J --> K[Delete temporary PNG]
+    K --> Z
+```
+
+**Rules:**
+
+- The Tesseract fallback runs only when needed. A high-confidence result never triggers it.
+- Tesseract's result replaces PaddleOCR's only if it is more confident. Otherwise the PaddleOCR result is kept.
+- If Tesseract is not installed, or fails, the PaddleOCR result is kept and a warning is logged. A missing fallback degrades quality rather than stopping ingestion.
+- Each page records the engine that produced its text.
+
+### 6.3.3 OCR Cache
+
+OCR results are cached as one JSON file per page, under `cache/`:
+
+```
+cache/<source-sha256>-p<page:04d>-<engine-tag>.json
+```
+
+| Component | Meaning |
+|-----------|---------|
+| `source-sha256` | Content hash of the source file, so a moved or renamed file still hits the cache |
+| `page` | 1-based page number (images use page 1) |
+| `engine-tag` | PaddleOCR version, render DPI, and `PIPELINE_VERSION` |
+
+**Cache rules:**
+
+- Changing the render DPI changes the engine tag, so results at one resolution are never reused for another.
+- Upgrading PaddleOCR changes the engine tag automatically.
+- `PIPELINE_VERSION` is bumped when the handling of OCR output changes in code.
+- The confidence threshold is **not** part of the cache key. It controls whether the fallback is attempted for new pages, not which cached text is best.
+- Cache files are written atomically (temporary file, then replace), so an interrupted write cannot leave a truncated entry.
+- The cache is regenerable and is not backed up (Section 10.1).
 
 ---
 
@@ -930,8 +1095,44 @@ flowchart TB
     GWAPI --> OllamaSvc
     OllamaSvc --> Models
 ```
+## 10.1 Package Layout
 
-### 10.1 File Layout
+The application package is organised by responsibility:
+
+```
+src/document_store/
+├── config.py               # configuration loading (Section 10.2)
+├── constants.py            # enumerations and code-level invariants (Sections 7.3, 10.2.2)
+├── logs.py                 # shared logging setup (Section 8.16)
+├── db/
+│   ├── connection.py       # SQLite connection with FK, WAL, sqlite-vec
+│   ├── migrate.py          # migration runner
+│   ├── vector.py          # embedding table helpers
+│   └── migrations/        # versioned SQL files
+├── ingest/
+│   ├── register.py         # file hashing and source_file registration
+│   ├── classify.py        # path-based classification
+│   ├── routing.py         # doc_class → processing_route
+│   ├── documents.py       # document records and route changes
+│   ├── review.py          # classification review
+│   ├── runlog.py          # processing_run records
+│   ├── pipeline.py        # ingestion orchestration
+│   └── cli.py             # python -m document_store.ingest
+├── extract/
+│   ├── errors.py          # ExtractionError
+│   ├── base.py            # Extractor base class
+│   ├── blocks.py          # Block, Heading, Paragraph, TableRow
+│   ├── pdf.py             # PdfExtractor, PageText, PdfExtraction
+│   ├── docx.py            # DocxExtractor, DocxExtraction
+│   └── ocr.py             # OCR cache, fallback, page and image OCR
+└── ocr/
+    ├── paddle.py          # PaddleOCR wrapper
+    └── tesseract.py       # Tesseract fallback
+```
+
+**Layering:** `extract` depends on `ocr` and not the reverse; `ingest` depends on `db` and `constants` and does not depend on `extract` until chunking is wired in (EPIC-4).
+
+### 10.1.1 File Layout
 
 | Path | Contents | Backup |
 |------|----------|--------|
@@ -1150,3 +1351,4 @@ gantt
 | v0.10 | 7.3, 7.3.2, 7.4, 8.1 | Split `other` into `unclassified` (system default) and `other` (reviewed); documented placeholder transition and sticky classification rules |
 | v0.11 | 8.2.1, 8.15, 8.16, 10.1, 11 | Run audit in `processing_run`; exit codes; shared logging module with text console and JSON-line run log; privacy rule and its enforcement |
 | v0.12 | 10.2 | Documented all configuration keys, code-level settings, environment variables, and configuration principles |
+| v0.13 | 6.2, 6.3, 10.1 | Added extraction design (extractor base class, block model, page model, Word page-number decision); OCR flow, fallback rules, and cache; package layout |

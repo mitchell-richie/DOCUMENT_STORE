@@ -12,6 +12,18 @@ from pathlib import Path
 
 import pymupdf
 
+from document_store.extract.base import Extractor
+from document_store.extract.errors import ExtractionError
+
+__all__ = [
+    "DEFAULT_MIN_TEXT_CHARS",
+    "ExtractionError",
+    "PageText",
+    "PdfExtraction",
+    "PdfExtractor",
+    "extract_pdf",
+]
+
 DEFAULT_MIN_TEXT_CHARS = 20
 
 
@@ -49,40 +61,42 @@ class PdfExtraction:
         ]
 
 
-def extract_pdf(path: Path, min_text_chars: int = DEFAULT_MIN_TEXT_CHARS) -> PdfExtraction:
-    """Extract text from each page of a PDF.
+class PdfExtractor(Extractor[PdfExtraction]):
+    format_name = "PDF"
+    open_errors = (RuntimeError,)
 
-    Args:
-        path: the PDF file.
-        min_text_chars: a page has a text layer when its non-whitespace text is
-            at least this long.
+    def __init__(self, path: Path, min_text_chars: int = DEFAULT_MIN_TEXT_CHARS) -> None:
+        super().__init__(path)
+        self.min_text_chars = min_text_chars
 
-    Raises:
-        ExtractionError: if the file cannot be opened as a PDF, or is encrypted.
-    """
-    try:
-        doc = pymupdf.open(path)
-    except RuntimeError as exc:
-        raise ExtractionError(f"cannot open PDF: {path.name}") from exc
+    def _open(self) -> pymupdf.Document:
+        return pymupdf.open(self.path)
 
-    with doc:
-        if doc.needs_pass:
-            raise ExtractionError(f"encrypted PDF: {path.name}")
+    def _check(self, source: pymupdf.Document) -> None:
+        if source.needs_pass:
+            raise ExtractionError(f"encrypted PDF: {self.path.name}")
+
+    def _read(self, source: pymupdf.Document) -> PdfExtraction:
         pages = tuple(
             PageText(
                 page_number=index,
                 text=text,
-                has_text_layer=len(text.strip()) >= min_text_chars,
+                has_text_layer=len(text.strip()) >= self.min_text_chars,
                 has_images=bool(page.get_images()),
             )
-            for index, page in enumerate(doc, start=1)
+            for index, page in enumerate(source, start=1)
             for text in [page.get_text("text")]
         )
-    return PdfExtraction(pages=pages)
+        return PdfExtraction(pages=pages)
 
-    
-class ExtractionError(Exception):
-    """Raised when a file cannot be read as an unencrypted PDF.
+    def _close(self, source: pymupdf.Document) -> None:
+        source.close()
 
-    The message names the file but never includes document text.
+
+def extract_pdf(path: Path, min_text_chars: int = DEFAULT_MIN_TEXT_CHARS) -> PdfExtraction:
+    """Extract text from each page of a PDF.
+
+    Raises:
+        ExtractionError: if the file cannot be opened as a PDF, or is encrypted.
     """
+    return PdfExtractor(path, min_text_chars).extract()
