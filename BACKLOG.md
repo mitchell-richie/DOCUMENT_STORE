@@ -346,7 +346,7 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - Results recorded in the evaluation log
 
 *Acceptance criteria:*
-- [ ] Benchmark script runs reproducibly
+- [x] Benchmark script runs reproducibly
 - [ ] Character error rate reported for each engine and for each pre-processing setting
 - [ ] Decision on default OCR configuration recorded
 

@@ -16,6 +16,7 @@ originals/
 cache/
 logs/
 outputs/
+benchmark-data/
 
 # Editors
 .vscode/*
