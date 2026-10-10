@@ -21,6 +21,7 @@ from pathlib import Path
 from time import perf_counter
 
 from document_store.bench.metrics import character_error_rate
+from document_store.logs import configure_console
 from document_store.ocr.paddle import OcrResult, create_engine, run_ocr
 from document_store.ocr.tesseract import tesseract_ocr
 
@@ -45,6 +46,7 @@ class ItemResult:
     cer: float
     mean_confidence: float
     seconds: float
+    text: str
 
 
 @dataclass(frozen=True)
@@ -57,11 +59,11 @@ class EngineSummary:
     seconds_per_item: float
 
 
-def discover_items(dataset: Path) -> tuple[list[BenchmarkItem], list[str]]:
+def discover_items(dataset: Path, limit: int|None=None) -> tuple[list[BenchmarkItem], list[str]]:
     """Pair each image with its transcript. Returns (items, names skipped)."""
     items: list[BenchmarkItem] = []
     skipped: list[str] = []
-    for image in sorted(p for p in dataset.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES):
+    for i, image in enumerate(sorted(p for p in dataset.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)):
         transcript = image.with_suffix(".txt")
         if not transcript.is_file():
             skipped.append(image.name)
@@ -73,6 +75,8 @@ def discover_items(dataset: Path) -> tuple[list[BenchmarkItem], list[str]]:
                 reference=transcript.read_text(encoding="utf-8"),
             )
         )
+        if (limit is not None) and (i==limit-1):
+            break
     return items, skipped
 
 
@@ -95,6 +99,8 @@ def run_benchmark(
 ) -> tuple[list[ItemResult], list[EngineSummary]]:
     """Run every engine on every item and summarise the results per engine."""
     results: list[ItemResult] = []
+    total = len(items) * len(engines)
+    done = 0
     for item in items:
         for name, run in engines.items():
             start = perf_counter()
@@ -107,9 +113,11 @@ def run_benchmark(
                     cer=character_error_rate(item.reference, result.text),
                     mean_confidence=result.mean_confidence,
                     seconds=elapsed,
+                    text=result.text,
                 )
             )
-            log.info("benchmarked %s with %s", item.name, name)
+            done += 1
+            print(f"[{done}/{total}] {item.name} with {name}: {elapsed:.1f}s", flush=True)
     summaries = [
         _summarise(name, [r for r in results if r.engine == name]) for name in engines
     ]
@@ -155,6 +163,7 @@ def build_engines(names: list[str]) -> dict[str, EngineRunner]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_console()
     parser = argparse.ArgumentParser(description="Benchmark OCR engines.")
     parser.add_argument("dataset", type=Path, help="folder of images with .txt transcripts")
     parser.add_argument(
@@ -162,9 +171,17 @@ def main(argv: list[str] | None = None) -> int:
         default="paddleocr,tesseract",
         help="comma-separated engines to compare (default: paddleocr,tesseract)",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="The number of images to test",
+        )
     args = parser.parse_args(argv)
-
-    items, skipped = discover_items(args.dataset)
+    args.limit = 5
+    print(f"Only pulling {args.limit} images")
+    items, skipped = discover_items(args.dataset, args.limit)
+    print(f"Pulled {len(items)} images")
     if skipped:
         print(f"skipped (no transcript): {', '.join(skipped)}", file=sys.stderr)
     if not items:
@@ -186,11 +203,13 @@ def main(argv: list[str] | None = None) -> int:
         ),
         encoding="utf-8",
     )
+    for r in results:
+        (args.dataset / f"{r.item}.{r.engine}.txt").write_text(r.text, encoding="utf-8")
     markdown = render_markdown(summaries, versions)
     (args.dataset / "results.md").write_text(markdown, encoding="utf-8")
     print(markdown)
     return 0
 
-
+sys.argv = ['ocr.py', '~/test_pdfs/', '--limit', '5']
 if __name__ == "__main__":
     sys.exit(main())

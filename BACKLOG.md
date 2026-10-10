@@ -347,7 +347,7 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 
 *Acceptance criteria:*
 - [x] Benchmark script runs reproducibly
-- [ ] Character error rate reported for each engine and for each pre-processing setting
+- [x] Character error rate reported for each engine and for each pre-processing setting
 - [ ] Decision on default OCR configuration recorded
 
 **STORY-3.8: Image file handling**

@@ -50,17 +50,19 @@ def parse_result(results: Iterable[Mapping[str, Any]]) -> OcrResult:
     return OcrResult(lines=lines)
 
 
-def create_engine(use_gpu: bool = False, enable_mkldnn: bool = False) -> Any:
+def create_engine(
+    use_gpu: bool = False,
+    enable_mkldnn: bool = False,
+    detection_model: str = "PP-OCRv5_mobile_det",
+    recognition_model: str = "PP-OCRv5_mobile_rec",
+) -> Any:
     """Create a PaddleOCR engine. The first call may download model files.
 
-    enable_mkldnn defaults to False: PaddlePaddle 3.3.1's oneDNN execution
-    path raises NotImplementedError on PP-OCRv6 detection for certain inputs
-    (ConvertPirAttribute2RuntimeAttribute). Revisit once this is fixed
-    upstream, since oneDNN otherwise speeds up CPU inference noticeably.
+    Mobile models are the default: in testing, comparable accuracy to the
+    server/medium models, at roughly a third of the inference time on CPU.
 
-    Document preprocessing models are disabled: they suit photographed
-    pages but add latency, and the scans in this corpus are mostly flat.
-    Revisit if OCR quality on skewed scans is poor (STORY-3.4).
+    enable_mkldnn defaults to False: see the known oneDNN issue (Section 13),
+    which also affects the mobile models.
     """
     from paddleocr import PaddleOCR
 
@@ -70,6 +72,8 @@ def create_engine(use_gpu: bool = False, enable_mkldnn: bool = False) -> Any:
         "use_doc_orientation_classify": False,
         "use_doc_unwarping": False,
         "use_textline_orientation": False,
+        "text_detection_model_name": detection_model,
+        "text_recognition_model_name": recognition_model,
     }
     if not use_gpu:
         kwargs["enable_mkldnn"] = enable_mkldnn

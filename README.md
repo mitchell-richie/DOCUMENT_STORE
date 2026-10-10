@@ -280,6 +280,24 @@ After a run, record the outcome (date, dataset size, CER per engine, engine
 versions, and the settings chosen) in your own notes, and update the default
 OCR settings in `config/config.toml` if the results justify a change.
 
+### Using a public dataset
+
+For a first comparison without transcribing your own scans, a public
+degraded-OCR dataset can be exported into the same layout:
+
+```bash
+uv sync --group bench
+uv run --group bench python -m document_store.bench.export_hf \
+    racineai/ocr-pdf-degraded ~/case-dms-benchmark/hf --limit 30
+uv run python -m document_store.bench.ocr ~/case-dms-benchmark/hf
+```
+
+Results from a public dataset are indicative only: its degradation is
+synthetic, and its ground truth may come from a specific OCR engine. Confirm
+the dataset's licence and ground-truth provenance on its dataset card before
+relying on the results, and supplement them with scans of your own documents
+where possible.
+
 ## Project Layout
 
 ```
