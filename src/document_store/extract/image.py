@@ -22,6 +22,7 @@ from document_store.extract.ocr import OcrCache, OcrEngine, OcrPage, ocr_image
 class ImageExtraction:
     page: OcrPage
     needs_vision: bool
+    low_confidence: bool
 
 
 class ImageExtractor(Extractor[ImageExtraction]):
@@ -67,6 +68,8 @@ class ImageExtractor(Extractor[ImageExtraction]):
         return ImageExtraction(
             page=page,
             needs_vision=len(page.text.strip()) < self.min_text_chars,
+            low_confidence=self.fallback_threshold is not None
+            and page.is_low_confidence(self.fallback_threshold, self.min_text_chars),
         )
 
     def _close(self, source: Image.Image) -> None:

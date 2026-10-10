@@ -14,7 +14,8 @@ import pymupdf
 
 from document_store.extract.base import DEFAULT_MIN_TEXT_CHARS, Extractor
 from document_store.extract.errors import ExtractionError
-
+from document_store.extract.ocr import OcrCache, OcrEngine, OcrPage, ocr_pdf_pages
+    
 __all__ = [
     "DEFAULT_MIN_TEXT_CHARS",
     "ExtractionError",
@@ -36,6 +37,8 @@ class PageText:
 @dataclass(frozen=True)
 class PdfExtraction:
     pages: tuple[PageText, ...]
+    ocr_pages: tuple[OcrPage, ...] = ()
+    low_confidence_pages: tuple[int, ...] = ()
 
     @property
     def page_count(self) -> int:
@@ -58,14 +61,38 @@ class PdfExtraction:
             if not page.has_text_layer and page.has_images
         ]
 
+    @property
+    def low_confidence(self) -> bool:
+        return bool(self.low_confidence_pages)
+
 
 class PdfExtractor(Extractor[PdfExtraction]):
     format_name = "PDF"
     open_errors = (RuntimeError,)
 
-    def __init__(self, path: Path, min_text_chars: int = DEFAULT_MIN_TEXT_CHARS) -> None:
+    def __init__(
+        self,
+        path: Path,
+        min_text_chars: int = DEFAULT_MIN_TEXT_CHARS,
+        *,
+        source_sha256: str | None = None,
+        engine: OcrEngine | None = None,
+        cache: OcrCache | None = None,
+        fallback_threshold: float | None = None,
+    ) -> None:
+        """Without an engine, only the native text layer is read.
+
+        With an engine, cache, and source_sha256, image-only pages are OCR'd
+        and those below fallback_threshold are listed in low_confidence_pages.
+        """
         super().__init__(path)
+        if engine is not None and (cache is None or source_sha256 is None):
+            raise ValueError("OCR requires cache and source_sha256")
         self.min_text_chars = min_text_chars
+        self.source_sha256 = source_sha256
+        self.engine = engine
+        self.cache = cache
+        self.fallback_threshold = fallback_threshold
 
     def _open(self) -> pymupdf.Document:
         return pymupdf.open(self.path)
@@ -85,7 +112,27 @@ class PdfExtractor(Extractor[PdfExtraction]):
             for index, page in enumerate(source, start=1)
             for text in [page.get_text("text")]
         )
-        return PdfExtraction(pages=pages)
+        extraction = PdfExtraction(pages=pages)
+        if self.engine is None or self.cache is None or self.source_sha256 is None:
+            return extraction
+
+        ocr_pages = tuple(
+            ocr_pdf_pages(
+                self.engine,
+                self.path,
+                self.source_sha256,
+                extraction.pages_needing_ocr,
+                self.cache,
+                self.fallback_threshold,
+            )
+        )
+        flagged = tuple(
+            page.page_number
+            for page in ocr_pages
+            if self.fallback_threshold is not None
+            and page.is_low_confidence(self.fallback_threshold, self.min_text_chars)
+        )
+        return PdfExtraction(pages=pages, ocr_pages=ocr_pages, low_confidence_pages=flagged)
 
     def _close(self, source: pymupdf.Document) -> None:
         source.close()

@@ -27,7 +27,7 @@ PADDLE_ENGINE = "paddleocr"
 DEFAULT_DPI = 200
 # Bump when the handling of OCR output changes in code, so cached results
 # from the previous behaviour are not reused.
-PIPELINE_VERSION = 2
+PIPELINE_VERSION = 3
 
 FallbackRunner = Callable[[], OcrResult]
 
@@ -43,6 +43,15 @@ class OcrPage:
     mean_confidence: float
     engine: str = PADDLE_ENGINE
     from_cache: bool = False
+
+    def is_low_confidence(self, threshold: float, min_text_chars: int) -> bool:
+        """True if the page has meaningful text and its confidence is below threshold.
+
+        A page with fewer than min_text_chars of recognised text is not
+        low-confidence text; it probably contains no text at all (a
+        photograph or a blank scan) and is handled by the vision route.
+        """
+        return len(self.text.strip()) >= min_text_chars and self.mean_confidence < threshold
 
 
 def engine_tag(dpi: int) -> str:

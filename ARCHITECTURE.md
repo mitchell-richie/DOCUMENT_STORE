@@ -24,6 +24,8 @@
 
 **Changes from v0.12** Extraction and OCR components are implemented (STORY-3.1 to 3.6). This adds a section describing the extraction design, the extractor class structure, the block model, the OCR cache and fallback behaviour, and the package layout.
 
+**Changes from v0.13** Documents and pages below OCR confidence threshold flagged for review (STORY-3.9)
+
 ---
 
 ## 1. Purpose and Scope
@@ -374,6 +376,8 @@ PDF extraction produces one `PageText` per page, numbered from 1:
 | `text` | Embedded text layer for the page |
 | `has_text_layer` | Non-whitespace text length is at least `min_text_chars` |
 | `has_images` | The page embeds at least one image |
+| `ocr_pages` | Pages which have undergone OCR |
+| `low_confidence_pages` | Numbers of pages for which OCR was low confidence |
 
 Derived lists:
 
@@ -448,6 +452,14 @@ cache/<source-sha256>-p<page:04d>-<engine-tag>.json
 - Cache files are written atomically (temporary file, then replace), so an interrupted write cannot leave a truncated entry.
 - The cache is regenerable and is not backed up (Section 10.1).
 
+### 6.3.4 Low-confidence flagging
+
+- **Flagging rule:** a page is flagged when its final confidence (after any Tesseract fallback) is below confidence_threshold and it has text. Pages where OCR found no text are recorded but not flagged.
+- **Document flag:** document.low_confidence is 1 while any page is flagged and unreviewed.
+- **Review:** clearing is per page or per whole document, with an optional note. The recorded confidence is kept.
+- **Sticky:** a cleared page stays cleared on re-runs unless the engine or engine tag changes.
+- **Unused kind:** review_item kind ocr stays unused; page state lives in the new table.
+
 ---
 
 ## 7. Data Model
@@ -505,6 +517,7 @@ erDiagram
 | `processing_run` | Audit record of pipeline runs | id, stage, model_id, parameters, started_at, finished_at | — |
 | `schema_migrations` | Applied migration versions | version, name, applied_at | Managed by the migration runner |
 | `document_route_change` | Audit trail for every change to a document's processing route | id, document_id, from_route, to_route, change_kind, is_downgrade, risk_acknowledged, reason, changed_at | `change_kind` is `automatic` or `manual`; `from_route`/`to_route` restricted to the routes in Section 7.3.1 |
+| `document_page_ocr` | Per-page OCR confidence and review state (STORY-3.9). document.low_confidence is derived from this table. |  id, document_id, page_number, engine, engine_tag, mean_confidence, low_confidence, recorded_at, reviewed_at, review_note | (document_id, page_number) unique and a cascade from document |
 
 > `document` carries a partial unique index, `idx_document_source_top_level`, on `source_file_id` where `parent_id IS NULL`. This guarantees exactly one top-level document per source file; attachments and email messages are children via `parent_id` and are not constrained by this index (EPIC-5).
 
@@ -621,7 +634,7 @@ Document classes are assigned from each file's path relative to the `originals/`
 | `correspondence/**` | `correspondence` | `standard` |
 | (no match) | `unclassified` | `local_only` |
 
-**Dependency on folder structure:** classification is only as reliable as the folder layout. The system does not infer class from document content. Documents placed outside the expected folders fall to `other` and route to `local_only`, which is a safe default but may not reflect their actual nature. STORY-2.5 provides a review path for these.
+**Dependency on folder structure:** classification is only as reliable as the folder layout. The system does not infer class from document content. Documents placed outside the expected folders fall to `unclassified` and route to `local_only`, which is a safe default but may not reflect their actual nature. STORY-2.5 provides a review path for these.
 
 **Matching rules:**
 
@@ -651,7 +664,7 @@ flowchart TD
 - A document cannot be manually reclassified to `unclassified`.
 - A downgrade from any class other than `unclassified` requires explicit acknowledgment of the risk (`--acknowledge-risk` on the CLI).
 - A reason is required for every reclassification and is stored in the audit trail.
-- Reclassification is available via `python -m document_store.ingest.review_cli`, with `list` and `reclassify` subcommands.
+- Reclassification is available via `python -m document_store.ingest.review_cli`, with `list`, `reclassify`, `ocr_list` and `ocr_reviewed [--page N] [--note TEXT]` subcommands.
 
 ### 8.2 Ingestion Pipeline
 
@@ -1116,6 +1129,7 @@ src/document_store/
 │   ├── documents.py       # document records and route changes
 │   ├── review.py          # classification review
 │   ├── runlog.py          # processing_run records
+|   ├── ocr_flags.py       # review ocr pages
 │   ├── pipeline.py        # ingestion orchestration
 │   └── cli.py             # python -m document_store.ingest
 ├── extract/
@@ -1166,7 +1180,7 @@ The configuration file is read at startup. It is local to each machine and exclu
 | `[models]` | `generation` | `"qwen2.5:7b-instruct"` | Answer generation model | Recorded per processing run |
 | `[chunking]` | `max_chars` | `2000` | Maximum characters per chunk | Affects chunks created after change; re-chunk to apply |
 | `[chunking]` | `overlap_chars` | `200` | Overlap between split chunks | As above |
-| `[ocr]` | `confidence_threshold` | `0.6` | Mean OCR confidence below which a page is flagged for review | Applies to future flagging |
+| `[ocr]` | `confidence_threshold` | `0.6` | mean OCR confidence below which the Tesseract fallback is attempted and the page is flagged for review | re-run the OCR stage to re-evaluate flags (served from cache) |
 | `[ocr]` | `min_text_chars` | `20` | Non-whitespace characters needed for a page to count as having a text layer | Affects future page routing |
 | `[ocr]` | `dpi` | `200` | Render resolution for OCR | Part of the OCR cache key; changes invalidate cached results |
 | `[classification]` | `default_doc_class` | `"unclassified"` | Class for files matching no rule | Applies to future ingestion |
@@ -1239,7 +1253,7 @@ originals/
 ├── in_camera/            # in camera material (local processing only)
 ├── court_filings/        # filed or served court documents
 ├── correspondence/       # letters and other correspondence
-└── (other folders)      # any other material; classified as "other"
+└── (other folders)      # any other material; classified as "unclassified"
 ```
 
 Bank statements and receipts are matched by filename pattern (`bank_statement*`, `receipt*`) and may sit in any folder beneath `originals/`.
@@ -1352,3 +1366,4 @@ gantt
 | v0.11 | 8.2.1, 8.15, 8.16, 10.1, 11 | Run audit in `processing_run`; exit codes; shared logging module with text console and JSON-line run log; privacy rule and its enforcement |
 | v0.12 | 10.2 | Documented all configuration keys, code-level settings, environment variables, and configuration principles |
 | v0.13 | 6.2, 6.3, 10.1 | Added extraction design (extractor base class, block model, page model, Word page-number decision); OCR flow, fallback rules, and cache; package layout |
+| v0.14 | 6.3.4, 7.2, 8.1, 8.1a, 8.3, 10.1, 10.2.1, 10.5 | Reflect move of OCR into PdfExtractor and incorporation of confidence threshold into OcrPage |
