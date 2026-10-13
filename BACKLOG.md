@@ -365,8 +365,8 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - Flag visible in the document record
 
 *Acceptance criteria:*
-- [ ] Low-confidence fixture appears in the flagged list
-- [ ] Flag clears on manual review
+- [x] Low-confidence fixture appears in the flagged list
+- [x] Flag clears on manual review
 
 ---
 

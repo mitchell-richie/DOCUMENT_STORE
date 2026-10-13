@@ -26,6 +26,8 @@
 
 **Changes from v0.13** Documents and pages below OCR confidence threshold flagged for review (STORY-3.9)
 
+**Changes from v0.14** Implement batch OCR pipeline and CLI
+
 ---
 
 ## 1. Purpose and Scope
@@ -984,7 +986,7 @@ Every processing run is recorded in `processing_run`:
 
 | Field | Content |
 |-------|---------|
-| `stage` | Name of the stage (e.g. `ingest`; later `extract`, `embed`, `extract_entities`) |
+| `stage` | Name of the stage (e.g. `ingest`; later `extract`, `ocr`, `embed`, `extract_entities`) |
 | `model_id` | Model used, where applicable |
 | `parameters` | JSON: run inputs, plus a `summary` object once the run completes |
 | `started_at` | Set when the run begins |
@@ -1138,13 +1140,16 @@ src/document_store/
 │   ├── blocks.py          # Block, Heading, Paragraph, TableRow
 │   ├── pdf.py             # PdfExtractor, PageText, PdfExtraction
 │   ├── docx.py            # DocxExtractor, DocxExtraction
+│   ├── image.py           # ImageExtractor, ImageExtraction
+│   ├── ocr_pipeline.py    # OCR orchestration
+│   ├── ocr_cli.py         # python -m document_store.ocr_cli
 │   └── ocr.py             # OCR cache, fallback, page and image OCR
 └── ocr/
     ├── paddle.py          # PaddleOCR wrapper
     └── tesseract.py       # Tesseract fallback
 ```
 
-**Layering:** `extract` depends on `ocr` and not the reverse; `ingest` depends on `db` and `constants` and does not depend on `extract` until chunking is wired in (EPIC-4).
+**Layering:** `extract` depends on `ocr` and not the reverse; `ingest` depends on `db` and `constants` and does not depend on `extract` until chunking is wired in (EPIC-4). The extractor classes depend only on ocr, and the two entry-point modules may import ingest and db
 
 ### 10.1.1 File Layout
 
@@ -1198,6 +1203,7 @@ These values are defined in code, not configuration, because they affect what th
 | `DOC_CLASSES` | `constants.py` | Valid document classes (must match the schema) |
 | `PIPELINE_VERSION` | `extract/ocr.py` | Bumped when OCR output handling changes in code; part of the OCR cache key |
 | `DEFAULT_MIN_TEXT_CHARS`, `DEFAULT_DPI` | `extract/pdf.py`, `extract/ocr.py` | Fallback values when a caller does not supply one; config values take precedence |
+| `CONTENT_ROUTES` | `constants.py` | Routes than may contain images requiring OCR |
 
 #### 10.2.3 Environment Variables
 
@@ -1367,3 +1373,4 @@ gantt
 | v0.12 | 10.2 | Documented all configuration keys, code-level settings, environment variables, and configuration principles |
 | v0.13 | 6.2, 6.3, 10.1 | Added extraction design (extractor base class, block model, page model, Word page-number decision); OCR flow, fallback rules, and cache; package layout |
 | v0.14 | 6.3.4, 7.2, 8.1, 8.1a, 8.3, 10.1, 10.2.1, 10.5 | Reflect move of OCR into PdfExtractor and incorporation of confidence threshold into OcrPage |
+| v0.15 | 8.15, 10.1, 10.2.2 | Implement batch OCR pipeline and CLI |

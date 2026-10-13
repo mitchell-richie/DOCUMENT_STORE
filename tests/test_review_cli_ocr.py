@@ -12,54 +12,10 @@ from document_store.ingest.ocr_flags import record_ocr_pages
 from document_store.ingest.register import register_file
 from document_store.ingest.review_cli import EXIT_ERROR, EXIT_OK, main
 
-CONFIG = """
-[paths]
-project_dir = "{project_dir}"
-database = "case.sqlite"
-originals = "originals"
-cache = "cache"
-logs = "logs"
-
-[gateway]
-url = "http://llm-gateway-api:8000"
-client_name = "case-dms"
-
-[models]
-embedding = "bge-m3"
-embedding_dimensions = 1024
-extraction = "qwen2.5:7b-instruct"
-generation = "qwen2.5:7b-instruct"
-
-[chunking]
-max_chars = 2000
-overlap_chars = 200
-
-[ocr]
-confidence_threshold = 0.6
-min_text_chars = 20
-dpi = 200
-
-[classification]
-default_doc_class = "unclassified"
-
-[routing]
-in_camera = "local_only"
-financial_statement = "external"
-receipt = "standard"
-court_filing = "standard"
-correspondence = "standard"
-other = "standard"
-unclassified = "local_only"
-"""
-
 
 @pytest.fixture
-def project(tmp_path: Path, fixtures_dir: Path, monkeypatch) -> tuple[str, int]:
+def project(config_file: Path, tmp_path: Path, fixtures_dir: Path) -> tuple[str, int]:
     """A config file and database holding one document with a flagged page."""
-    monkeypatch.setenv("LLM_GATEWAY_KEY", "test-key")
-    config = tmp_path / "config.toml"
-    config.write_text(CONFIG.format(project_dir=tmp_path.as_posix()), encoding="utf-8")
-
     connection = connect(tmp_path / "case.sqlite")
     try:
         migrate(connection)
@@ -67,22 +23,16 @@ def project(tmp_path: Path, fixtures_dir: Path, monkeypatch) -> tuple[str, int]:
         document_id = create_or_update_document(
             connection, source, "correspondence", "standard", "scanned.pdf"
         ).document_id
-        low_confidence_page_number = 1
-        low_confidence_page = OcrPage(
-            page_number=low_confidence_page_number,
-            text="Smudged words",
-            mean_confidence=0.31
-            )
         record_ocr_pages(
             connection,
             document_id,
-            [low_confidence_page],
-            [low_confidence_page_number],
+            [OcrPage(page_number=1, text="", mean_confidence=0.31)],
+            [1],
             engine_tag="test-tag",
         )
     finally:
         connection.close()
-    return str(config), document_id
+    return str(config_file), document_id
 
 
 def test_ocr_list_shows_flagged_page(project, capsys) -> None:

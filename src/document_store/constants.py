@@ -29,3 +29,8 @@ PROCESSING_ROUTES = frozenset(ROUTE_RESTRICTIVENESS)
 ENFORCED_ROUTES = {
     "in_camera": "local_only",
 }
+
+# Routes whose documents have their content processed (OCR now; chunking and
+# embedding from EPIC-4). index_only and external documents are registered,
+# but their content is never read by this system.
+CONTENT_ROUTES = frozenset({"local_only", "standard"})
