@@ -1119,6 +1119,8 @@ src/document_store/
 ├── config.py               # configuration loading (Section 10.2)
 ├── constants.py            # enumerations and code-level invariants (Sections 7.3, 10.2.2)
 ├── logs.py                 # shared logging setup (Section 8.16)
+├── gateway.py              # client module for llm gateway
+├── gateway_check.py        # startup health check for llm gateway
 ├── db/
 │   ├── connection.py       # SQLite connection with FK, WAL, sqlite-vec
 │   ├── migrate.py          # migration runner
@@ -1249,6 +1251,7 @@ sequenceDiagram
 ```
 
 The startup check in the devcontainer confirms that both health and embedding endpoints are reachable before any processing begins.
+the check is python -m document_store.gateway_check, run after reopening the devcontainer. It verifies health, embeds one text with the configured model and compares the dimensions with config, and with --full exercises the extraction and generation models. Exit codes are 0 (passed), 1 (a check failed), 2 (configuration error).
 
 ### 10.5 Originals Folder Convention
 

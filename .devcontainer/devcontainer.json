@@ -6,6 +6,9 @@
     "LLM_GATEWAY_URL": "http://llm-gateway-api:8000",
     "LLM_CLIENT_NAME": "case-dms"
   },
+  "remoteEnv": {
+      "UV_ENV_FILE": "${containerWorkspaceFolder}/.env"
+  },
   "workspaceFolder": "/workspace",
   "mounts": [
     "source=${localWorkspaceFolder},target=/workspace,type=bind",
