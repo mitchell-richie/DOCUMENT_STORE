@@ -30,6 +30,13 @@ class CheckReport:
     def ok(self) -> bool:
         return not self.failed
 
+def _describe(exc: GatewayError) -> str:
+    """The failure plus the gateway's detail.
+
+    Safe here only because this check sends fixed strings, never document
+    content, so the detail cannot contain any.
+    """
+    return f"{exc} [{exc.detail}]" if exc.detail else str(exc)
 
 def run_check(client: GatewayClient, settings: Settings, full: bool = False) -> CheckReport:
     """Run the checks in order, stopping after the first failure.
@@ -42,7 +49,7 @@ def run_check(client: GatewayClient, settings: Settings, full: bool = False) -> 
     try:
         client.check_health()
     except GatewayError as exc:
-        report.failed.append(f"health: {exc}")
+        report.failed.append(f"health: {_describe(exc)}")
         return report
     report.passed.append(f"health: {settings.gateway.url}")
 
@@ -51,7 +58,7 @@ def run_check(client: GatewayClient, settings: Settings, full: bool = False) -> 
     try:
         result = client.embed([SMOKE_TEXT], model)
     except GatewayError as exc:
-        report.failed.append(f"embed ({model}): {exc}")
+        report.failed.append(f"embed ({model}): {_describe(exc)}")
         return report
     if result.dimensions != expected:
         report.failed.append(
@@ -71,7 +78,7 @@ def run_check(client: GatewayClient, settings: Settings, full: bool = False) -> 
         try:
             client.generate("Reply with the single word OK.", name, temperature=0.0)
         except GatewayError as exc:
-            report.failed.append(f"{purpose} ({name}): {exc}")
+            report.failed.append(f"{purpose} ({name}): {_describe(exc)}")
             return report
         report.passed.append(f"{purpose}: {name}")
 
