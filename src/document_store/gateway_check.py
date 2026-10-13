@@ -31,12 +31,15 @@ class CheckReport:
         return not self.failed
 
 def _describe(exc: GatewayError) -> str:
-    """The failure plus the gateway's detail.
+    """The failure plus the gateway's detail, where the message lacks it.
 
     Safe here only because this check sends fixed strings, never document
     content, so the detail cannot contain any.
     """
-    return f"{exc} [{exc.detail}]" if exc.detail else str(exc)
+    detail = str(exc.detail) if exc.detail else ""
+    if detail and detail not in str(exc):
+        return f"{exc} [{detail}]"
+    return str(exc)
 
 def run_check(client: GatewayClient, settings: Settings, full: bool = False) -> CheckReport:
     """Run the checks in order, stopping after the first failure.
