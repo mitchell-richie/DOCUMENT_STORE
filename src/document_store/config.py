@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_CONFIG_PATH = Path("config/config.toml")
@@ -25,13 +25,6 @@ class Paths:
     originals: Path
     cache: Path
     logs: Path
-
-
-@dataclass(frozen=True)
-class GatewayConfig:
-    url: str
-    client_name: str
-    api_key: str
 
 
 @dataclass(frozen=True)
@@ -114,6 +107,9 @@ def load_settings(path: Path = DEFAULT_CONFIG_PATH) -> Settings:
             url=gateway_raw["url"],
             client_name=gateway_raw["client_name"],
             api_key=api_key,
+            timeout_seconds=float(gateway_raw.get("timeout_seconds", 150)),
+            retries=int(gateway_raw.get("retries", 2)),
+            embed_batch_size=int(gateway_raw.get("embed_batch_size", 32)),
         ),
         models=Models(
             embedding=models_raw["embedding"],
@@ -146,3 +142,21 @@ class ClassificationConfig:
 @dataclass(frozen=True)
 class RoutingConfig:
     mapping: dict[str, str]
+
+
+@dataclass(frozen=True)
+class GatewayConfig:
+    url: str
+    client_name: str
+    api_key: str = field(repr=False)
+    timeout_seconds: float = 150.0
+    retries: int = 2
+    embed_batch_size: int = 32
+
+    def __post_init__(self) -> None:
+        if self.timeout_seconds <= 0:
+            raise ConfigError("gateway.timeout_seconds must be positive")
+        if self.retries < 0:
+            raise ConfigError("gateway.retries must not be negative")
+        if self.embed_batch_size < 1:
+            raise ConfigError("gateway.embed_batch_size must be at least 1")

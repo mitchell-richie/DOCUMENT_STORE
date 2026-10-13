@@ -6,7 +6,9 @@ import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
+import httpx
 import pytest
 
 from document_store.config import ClassificationConfig, ClassificationRule, RoutingConfig
@@ -14,6 +16,7 @@ from document_store.db.connection import connect
 from document_store.db.migrate import migrate
 from document_store.extract.ocr import PADDLE_ENGINE, OcrCache
 from document_store.extract.pdf import extract_pdf
+from document_store.gateway import GatewayClient, GatewayConfig
 from document_store.ingest.classify import Classifier, build_classifier
 from document_store.ingest.documents import create_or_update_document
 from document_store.ingest.register import register_file, sha256_of
@@ -191,3 +194,38 @@ def low_confidence_scan(
     cache = OcrCache(tmp_path / "cache")
     seed_ocr_cache(cache, sha256, pages)
     return LowConfidenceScan(document_id, path, sha256, pages, cache)
+
+
+class FakeGateway:
+    """Replies from a list, repeating the last reply, and records requests.
+
+    A reply is (status, json_body) or an exception to raise.
+    """
+
+    def __init__(self, *replies: Any) -> None:
+        self.replies = replies
+        self.requests: list[httpx.Request] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        reply = self.replies[min(len(self.requests), len(self.replies)) - 1]
+        if isinstance(reply, Exception):
+            raise reply
+        status, body = reply
+        return httpx.Response(status, json=body)
+
+    def payload(self, index: int = 0) -> dict[str, Any]:
+        return json.loads(self.requests[index].content)
+
+
+def _client(gateway: Any, **overrides: Any) -> tuple[GatewayClient, list[float]]:
+    sleeps: list[float] = []
+    config = GatewayConfig(
+        url="http://gateway.test", client_name="case-dms", api_key="secret-key", **overrides
+    )
+    client = GatewayClient(config, transport=httpx.MockTransport(gateway), sleep=sleeps.append)
+    return client, sleeps
+
+
+def _embed_reply(vectors: list[list[float]]) -> tuple[int, dict[str, Any]]:
+    return 200, {"embeddings": vectors, "model": "bge-m3", "dimensions": len(vectors[0])}
