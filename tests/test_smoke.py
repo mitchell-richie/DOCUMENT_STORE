@@ -31,6 +31,8 @@ overlap_chars = 200
 
 [ocr]
 confidence_threshold = 0.6
+min_text_chars = 20
+dpi = 200
 
 [classification]
 default_doc_class = "unclassified"

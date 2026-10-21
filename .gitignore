@@ -16,6 +16,7 @@ originals/
 cache/
 logs/
 outputs/
+benchmark-data/
 
 # Editors
 .vscode/*
@@ -23,3 +24,4 @@ outputs/
 
 # Tests
 .coverage
+test_pdfs/

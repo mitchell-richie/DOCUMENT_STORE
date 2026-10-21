@@ -288,8 +288,8 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - Records page count and whether each page has a text layer
 
 *Acceptance criteria:*
-- [ ] Native fixture PDF returns text for each page with correct page numbers
-- [ ] Page-level text-layer status is recorded
+- [x] Native fixture PDF returns text for each page with correct page numbers
+- [x] Page-level text-layer status is recorded
 
 **STORY-3.2: Image-only page detection**
 
@@ -297,8 +297,9 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - Threshold configurable
 
 *Acceptance criteria:*
-- [ ] Scanned fixture PDF identifies all pages as image-only
-- [ ] Native fixture PDF identifies none
+- [x] Scanned fixture PDF identifies all pages as image-only
+- [x] Native fixture PDF identifies none
+- [x] Character threshold for ocr requirement set in config and passed to extract_pdf()
 
 **STORY-3.3: PaddleOCR integration**
 
@@ -307,9 +308,9 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - Results cached in `cache/` to avoid reprocessing
 
 *Acceptance criteria:*
-- [ ] Scanned fixture produces text with confidence
-- [ ] Re-running uses cache and does not re-run OCR
-- [ ] OCR output is stored per page
+- [x] Scanned fixture produces text with confidence
+- [x] Re-running uses cache and does not re-run OCR
+- [x] OCR output is stored per page
 
 **STORY-3.4: Image pre-processing**
 
@@ -326,8 +327,8 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - The higher-confidence result is kept
 
 *Acceptance criteria:*
-- [ ] Fallback triggers on a low-confidence fixture
-- [ ] Fallback does not trigger on high-confidence fixtures
+- [x] Fallback triggers on a low-confidence fixture
+- [x] Fallback does not trigger on high-confidence fixtures
 
 **STORY-3.6: DOCX extraction**
 
@@ -335,8 +336,8 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - Page numbers are approximated where Word does not store them; this is recorded
 
 *Acceptance criteria:*
-- [ ] DOCX fixture yields paragraphs and headings in order
-- [ ] Tables are extracted as text with row and column markers
+- [x] DOCX fixture yields paragraphs and headings in order
+- [x] Tables are extracted as text with row and column markers
 
 **STORY-3.7: OCR benchmark**
 
@@ -345,8 +346,8 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - Results recorded in the evaluation log
 
 *Acceptance criteria:*
-- [ ] Benchmark script runs reproducibly
-- [ ] Character error rate reported for each engine and for each pre-processing setting
+- [x] Benchmark script runs reproducibly
+- [x] Character error rate reported for each engine and for each pre-processing setting
 - [ ] Decision on default OCR configuration recorded
 
 **STORY-3.8: Image file handling**
@@ -355,8 +356,8 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - Images with no meaningful text are flagged for vision description (deferred to EPIC-6 or later)
 
 *Acceptance criteria:*
-- [ ] Receipt fixture produces OCR text
-- [ ] Images with no text are flagged
+- [x] Receipt fixture produces OCR text
+- [x] Images with no text are flagged
 
 **STORY-3.9: Low-confidence flagging**
 
@@ -364,8 +365,8 @@ CREATE UNIQUE INDEX idx_document_source_top_level
 - Flag visible in the document record
 
 *Acceptance criteria:*
-- [ ] Low-confidence fixture appears in the flagged list
-- [ ] Flag clears on manual review
+- [x] Low-confidence fixture appears in the flagged list
+- [x] Flag clears on manual review
 
 ---
 
