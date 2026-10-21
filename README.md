@@ -89,7 +89,7 @@ content. Routes, from most to least restrictive:
 |-------|---------|
 | `local_only` | Processed locally only; never sent to cloud services |
 | `index_only` | Registered and searchable by metadata; not chunked or embedded |
-| `external` | Handled by another tool (e.g. bank statements); not chunked or embedded |
+| `external` | Handled by another tool (e.g. bank statements); not chunked or embedded. An `external_record` keyed on the file's SHA-256 links it to that tool |
 | `standard` | Processed normally; cloud services permitted if enabled |
 
 ### How routes are assigned

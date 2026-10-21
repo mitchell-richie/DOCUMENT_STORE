@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from document_store.config import RoutingConfig
-from document_store.constants import DOC_CLASSES, ENFORCED_ROUTES, PROCESSING_ROUTES
+from document_store.constants import (
+    DOC_CLASSES,
+    ENFORCED_ROUTES,
+    EXTERNAL_SYSTEMS,
+    PROCESSING_ROUTES,
+)
 from document_store.ingest.classify import Classifier, relative_to_originals
 
 log = logging.getLogger(__name__)
@@ -36,8 +41,9 @@ def build_router(config: RoutingConfig) -> Router:
 
     Raises:
         ValueError: if any doc_class is missing a route, an unrecognised
-            doc_class or processing_route appears, or the mapping is
-            otherwise invalid.
+            doc_class or processing_route appears, a doc_class routed
+            `external` has no external system, or the mapping is otherwise
+            invalid.
     """
     missing = DOC_CLASSES - config.mapping.keys()
     if missing:
@@ -63,6 +69,17 @@ def build_router(config: RoutingConfig) -> Router:
                 required_route,
             )
             mapping[doc_class] = required_route
+
+    unlinked = sorted(
+        doc_class
+        for doc_class, route in mapping.items()
+        if route == "external" and doc_class not in EXTERNAL_SYSTEMS
+    )
+    if unlinked:
+        raise ValueError(
+            f"doc_class(es) routed 'external' have no external system defined "
+            f"in EXTERNAL_SYSTEMS: {unlinked}"
+        )
 
     return Router(_mapping=mapping)
 

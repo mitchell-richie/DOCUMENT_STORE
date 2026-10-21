@@ -8,9 +8,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from document_store.constants import PROCESSING_ROUTES  # noqa: F401 (route vocabulary)
 from document_store.ingest.classify import Classifier, relative_to_originals
 from document_store.ingest.documents import create_or_update_document
+from document_store.ingest.external import ensure_external_record
 from document_store.ingest.register import mime_type_for, register_file
 from document_store.ingest.routing import Router, route_document
 
@@ -19,11 +19,19 @@ log = logging.getLogger(__name__)
 EXPECTED_ERRORS = (OSError, ValueError, sqlite3.Error)
 
 
+@dataclass(frozen=True)
+class FileResult:
+    document_created: bool
+    route_changed: bool
+    external_record_created: bool
+
+
 @dataclass
 class IngestSummary:
     documents_created: int = 0
     documents_existing: int = 0
     routes_upgraded: int = 0
+    external_records_created: int = 0
     skipped: list[Path] = field(default_factory=list)
     errors: list[tuple[Path, str]] = field(default_factory=list)
 
@@ -33,9 +41,10 @@ class IngestSummary:
             "documents_created": self.documents_created,
             "documents_existing": self.documents_existing,
             "routes_upgraded": self.routes_upgraded,
+            "external_records_created": self.external_records_created,
             "files_skipped": len(self.skipped),
             "files_failed": [path.name for path, _ in self.errors],
-        }    
+        }
 
 
 def check_within_originals(originals_root: Path, target: Path) -> None:
@@ -49,8 +58,12 @@ def ingest_file(
     router: Router,
     originals_root: Path,
     path: Path,
-) -> tuple[bool, bool]:
-    """Ingest one file. Returns (document_created, route_changed)."""
+) -> FileResult:
+    """Ingest one file: register it, route it, and record its document.
+
+    A document whose route is `external` also receives an external_record;
+    its content is never processed here (STORY-2.8, STORY-4.10).
+    """
     registration = register_file(conn, path)
     doc_class, route = route_document(classifier, router, originals_root, path)
     result = create_or_update_document(
@@ -60,7 +73,12 @@ def ingest_file(
         route=route,
         title=path.name,
     )
-    return result.created, result.route_changed
+    external_created = ensure_external_record(conn, result.document_id)
+    return FileResult(
+        document_created=result.created,
+        route_changed=result.route_changed,
+        external_record_created=external_created,
+    )
 
 
 def ingest_folder(
@@ -78,19 +96,18 @@ def ingest_folder(
             summary.skipped.append(path)
             continue
         try:
-            created, route_changed = ingest_file(
-                conn, classifier, router, originals_root, path
-            )
+            result = ingest_file(conn, classifier, router, originals_root, path)
         except EXPECTED_ERRORS as exc:
             log.error("failed to ingest %s: %s", path.name, exc)
             summary.errors.append((path, str(exc)))
             continue
 
-        if created:
+        if result.document_created:
             summary.documents_created += 1
-        elif route_changed:
+        elif result.route_changed:
             summary.routes_upgraded += 1
         else:
             summary.documents_existing += 1
+        if result.external_record_created:
+            summary.external_records_created += 1
     return summary
-

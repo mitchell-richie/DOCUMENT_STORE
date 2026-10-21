@@ -206,9 +206,9 @@ flowchart LR
 - Rules are defined in config, not code
 
 *Acceptance criteria:*
-- [ ] Bank statement files are classified as `financial_statement` by configured pattern
-- [ ] In camera material classified by configured folder or pattern
-- [ ] Rules are testable with fixture filenames
+- [x] Bank statement files are classified as `financial_statement` by configured pattern
+- [x] In camera material classified by configured folder or pattern
+- [x] Rules are testable with fixture filenames
 
 **STORY-2.4: Routing engine**
 
@@ -256,7 +256,7 @@ flowchart LR
 - [x] Registering a file with a supported type creates exactly one top-level `document` row for its `source_file`
 - [x] Re-running creates no duplicate documents
 - [x] A file present at multiple paths takes the most restrictive route across all locations, and the document row is updated if a later location is more restrictive
-- [ ] `financial_statement` documents create a `document` row and an `external_record` row, and no chunks
+- [x] `financial_statement` documents create a `document` row and an `external_record` row, and no chunks
 - [x] `doc_class` and `processing_route` are stored on the document
 - [x] The document row's `title` defaults to the file name
 
@@ -1071,7 +1071,7 @@ Scope: foundation plus the thinnest end-to-end slice through a single file type.
 |-----------|---------|------------------|
 | Classification rules for in camera material (folder, filename, or metadata) | STORY-2.3 | Case owner |
 | Applicable court restrictions on storage and processing | STORY-2.4, STORY-11.5 | Case owner and legal advisers |
-| Bank statement file pattern and external tool interface | STORY-2.3, STORY-4.10 | Case owner |
+| External tool interface for bank statements. The `external_record` link is keyed on the source SHA-256 (STORY-2.8); the tool's own identifier and `summary_date_range` are still to be defined | STORY-4.10 | Case owner |
 | Frontend framework choice (Streamlit or HTMX) | STORY-12.1 | Architecture review |
 | Default embedding and extraction models | STORY-4.6, STORY-6.12 | Benchmark results |
 | Threshold values (OCR confidence, gap days, chunk size) | STORY-3.9, STORY-5.9, STORY-4.2 | Evaluation results |

@@ -28,6 +28,8 @@
 
 **Changes from v0.14** Implement batch OCR pipeline and CLI
 
+**Changes from v0.15** Documents on the `external` route receive an `external_record` at ingestion and on reclassification (STORY-2.8). Adds `EXTERNAL_SYSTEMS` and the startup check that every class routed `external` has a named system.
+
 ---
 
 ## 1. Purpose and Scope
@@ -595,6 +597,7 @@ Processing routes are ranked by restrictiveness, most restrictive first:
 - **All other downgrades require acknowledgment.** For example, `in_camera` → `correspondence` requires `risk_acknowledged=True`.
 - **Sticky classification.** Once a document has a manual class decision (a row in `document_class_change`), automatic ingestion may still upgrade its route for safety, but it does not change `doc_class` or `title`.
 - **`other` cannot be downgraded.** `standard` is the least restrictive route, so reclassifying a document from `other` can only keep or raise its route.
+- **External records.** A document whose stored route is `external` receives one `external_record` (`ingest/external.py`), created at ingestion and on manual reclassification. `external_system` is the name from `EXTERNAL_SYSTEMS` for the document's class; `external_id` is the source file's SHA-256, so the other tool can locate the same content without sharing database identifiers. `summary_date_range` is left for the other tool. The decision uses the stored route, not the incoming one: duplicate content already held at a more restrictive route gets no record. An existing record is kept if the route is later raised; it is a pointer, and the route alone governs processing.
 
 ---
 
@@ -719,7 +722,8 @@ flowchart TD
 
 - Classification requires the file to be located beneath the configured originals root; a path outside it cannot be classified and is rejected before registration proceeds.
 - Per-file failures (I/O errors, database errors) are caught and logged individually; a single failing file does not stop the rest of the run.
-- Chunking, embedding, and extraction are not yet wired into this pipeline; they begin in EPIC-4. `external` and `index_only` routed documents are expected to bypass these steps entirely once implemented.
+- A document whose route is `external` receives an `external_record` (Section 7.4) and nothing else: no OCR, chunking, embedding, or extraction is performed on it. `index_only` documents are likewise registered only.
+- Chunking, embedding, and extraction are not yet wired into this pipeline; they begin in EPIC-4.
 
 ### 8.2.1 Ingestion CLI
 
@@ -1131,6 +1135,7 @@ src/document_store/
 │   ├── classify.py        # path-based classification
 │   ├── routing.py         # doc_class → processing_route
 │   ├── documents.py       # document records and route changes
+│   ├── external.py        # external_record for documents handled by another tool
 │   ├── review.py          # classification review
 │   ├── runlog.py          # processing_run records
 |   ├── ocr_flags.py       # review ocr pages
@@ -1205,7 +1210,8 @@ These values are defined in code, not configuration, because they affect what th
 | `DOC_CLASSES` | `constants.py` | Valid document classes (must match the schema) |
 | `PIPELINE_VERSION` | `extract/ocr.py` | Bumped when OCR output handling changes in code; part of the OCR cache key |
 | `DEFAULT_MIN_TEXT_CHARS`, `DEFAULT_DPI` | `extract/pdf.py`, `extract/ocr.py` | Fallback values when a caller does not supply one; config values take precedence |
-| `CONTENT_ROUTES` | `constants.py` | Routes than may contain images requiring OCR |
+| `CONTENT_ROUTES` | `constants.py` | Routes whose documents have their content processed (OCR now; chunking and embedding from EPIC-4) |
+| `EXTERNAL_SYSTEMS` | `constants.py` | External system name per `doc_class` routed `external`; checked at startup (Section 7.4) |
 
 #### 10.2.3 Environment Variables
 
@@ -1323,7 +1329,7 @@ The evaluation is repeated whenever the embedding model, OCR engine, chunker, or
 | Entity misidentification (same name, different persons) | Risk | No automatic merging; alias proposals only |
 | GPU memory (4 GB) limits model size | Constraint | CPU inference for larger models; GPU for small models |
 | Court restrictions on storing disclosed or in camera material | Open | Confirm before ingestion; may affect storage location and encryption |
-| Bank statement tool interoperability | Open | Define the form of the `external_record` link |
+| Bank statement tool interoperability | Open | `external_record` is keyed on the source SHA-256 (Section 7.4); the tool's own identifier and `summary_date_range` remain to be defined |
 | Handling of privileged material | Open | Determine whether privileged items are tagged and excluded from cloud features |
 | Adoption of Kuzu | Open | Reassess if multi-hop queries become common |
 | Export formats for legal advisers | Open | Likely PDF chronologies and CSV |
@@ -1377,3 +1383,4 @@ gantt
 | v0.13 | 6.2, 6.3, 10.1 | Added extraction design (extractor base class, block model, page model, Word page-number decision); OCR flow, fallback rules, and cache; package layout |
 | v0.14 | 6.3.4, 7.2, 8.1, 8.1a, 8.3, 10.1, 10.2.1, 10.5 | Reflect move of OCR into PdfExtractor and incorporation of confidence threshold into OcrPage |
 | v0.15 | 8.15, 10.1, 10.2.2 | Implement batch OCR pipeline and CLI |
+| v0.16 | 7.4, 8.2, 10.1, 10.2.2, 13 | External records for `external`-routed documents (STORY-2.8); `EXTERNAL_SYSTEMS` code-level setting |

@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from document_store.constants import DOC_CLASSES
 from document_store.ingest.documents import _apply_route_change
+from document_store.ingest.external import ensure_external_record
 from document_store.ingest.routing import Router
 
 UNCLASSIFIED = "unclassified"
@@ -49,7 +50,8 @@ def reclassify(
     """Set a document's class and route. Returns True if anything changed.
 
     The title is not changed: a manual decision has no source location to
-    take a title from.
+    take a title from. If the new route is `external`, the document's
+    external_record is created, as it would be at ingestion.
 
     Raises:
         ValueError: for an unrecognised class, an empty reason, or a missing document.
@@ -103,4 +105,5 @@ def reclassify(
                 "VALUES (?, ?, ?, ?, ?)",
                 (document_id, old_class, new_class, reason, timestamp),
             )
-        return True
+    ensure_external_record(conn, document_id)
+    return True

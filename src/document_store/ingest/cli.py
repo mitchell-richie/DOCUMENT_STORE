@@ -86,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"documents created:  {summary.documents_created}")
     print(f"documents existing: {summary.documents_existing}")
     print(f"routes upgraded:    {summary.routes_upgraded}")
+    print(f"external records:   {summary.external_records_created}")
     print(f"files skipped:      {len(summary.skipped)}")
     print(f"files failed:       {len(summary.errors)}")
     print(f"log file:           {log_path}")
