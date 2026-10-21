@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from document_store.gateway_check import run_check
 
 from conftest import FakeGateway, _embed_reply
 from document_store.config import (
@@ -16,6 +15,7 @@ from document_store.config import (
     Settings,
 )
 from document_store.gateway import GatewayClient
+from document_store.gateway_check import run_check
 
 
 def _settings(dimensions: int = 2) -> Settings:
